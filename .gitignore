@@ -1,0 +1,6 @@
+.idea
+.DS_Store
+*.log
+*.csv
+aws-keys.json
+node_modules/
