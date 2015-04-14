@@ -171,8 +171,8 @@ describe('picom', function () {
 			service3.stream({
 				service: 'service1',
 				cmd: 'streamEcho'
-			}, payload).collect().toArray(function (response) {
-				expect(response[0]).to.deep.equal(arr);
+			}, payload).toArray(function (response) {
+				expect(response).to.deep.equal(arr);
 				done();
 			});
 		});
@@ -184,8 +184,8 @@ describe('picom', function () {
 			service3.stream({
 				service: 'service2',
 				cmd: 'streamEchoNext'
-			}, payload).collect().toArray(function (response) {
-				expect(response[0]).to.deep.equal(arr);
+			}, payload).toArray(function (response) {
+				expect(response).to.deep.equal(arr);
 				done();
 			});
 		});
@@ -251,8 +251,8 @@ describe('picom', function () {
 			service3.stream({
 				service: 'service1',
 				cmd: 'streamEcho'
-			}, payload).collect().toArray(function (response) {
-				expect(response[0]).to.deep.equal(arr);
+			}, payload).toArray(function (response) {
+				expect(response).to.deep.equal(arr);
 				done();
 			});
 		});
@@ -272,8 +272,8 @@ describe('picom', function () {
 			service3.stream({
 				service: 'service1',
 				cmd: 'streamEcho'
-			}, stream).collect().toArray(function (response) {
-				expect(response[0].length).to.equal(SIZE);
+			}, stream).toArray(function (response) {
+				expect(response.length).to.equal(SIZE);
 				done();
 			});
 		});
@@ -316,8 +316,8 @@ describe('picom', function () {
 				}));
 				responses.push('' + i);
 			}
-			_.merge(requests).collect().toArray(function (combined) {
-				expect(combined[0]).to.deep.equals(responses);
+			_.merge(requests).toArray(function (combined) {
+				expect(combined).to.deep.equals(responses);
 				done();
 			});
 		});
@@ -332,8 +332,8 @@ describe('picom', function () {
 				}));
 				responses.push('method1-service2-reply');
 			}
-			_.merge(requests).collect().toArray(function (combined) {
-				expect(combined[0]).to.deep.equals(responses);
+			_.merge(requests).toArray(function (combined) {
+				expect(combined).to.deep.equals(responses);
 				done();
 			});
 		});
