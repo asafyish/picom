@@ -94,24 +94,34 @@ module.exports = function (localServiceName, options) {
 				}
 			});
 
+		let isConnectionTerminatedCorrectly = false;
+
 		// Return highland stream
 		return _(socket.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(through2.obj(function (data, enc, callback) {
 			if (data._type_ === 'error') {
-				callback(new Error(data._message_));
-				return;
+				return callback(new Error(data._message_));
+			} else if (data._type_ === 'end') {
+
+				// Mark connection terminated correctly
+				isConnectionTerminatedCorrectly = true;
+				return callback();
 			}
 
 			callback(null, data);
+		}, function (callback) {
+			if (isConnectionTerminatedCorrectly) {
+				return callback();
+			}
+
+			callback(new Error('Connection droped'));
 		})));
 	}
 
 	function fetch(args, payload) {
 		return new Promise(function (resolve, reject) {
 			let s = stream(args, payload);
-			s.on('error', function(err) {
-				reject(err);
-			});
-			s.toArray(function(result) {
+			s.on('error', reject);
+			s.toArray(function (result) {
 				if (args.multiple) {
 					resolve(result);
 				} else {
@@ -149,13 +159,31 @@ module.exports = function (localServiceName, options) {
 		let inStream = _(encodeStream());
 		let outStream = encodeStream();
 		outStream.pipe(lengthPrefixedStream.encode()).pipe(socket);
-		socket.on('close', function(hadError) {
-			console.error('socket got closed', hadError);
-			inStream.end();
+
+		socket.on('close', function (hadError) {
+			inStream.destroy();
 		});
-		socket.on('error', function(err) {
-			console.error('socket error', err);
+		socket.on('error', function (err) {
+			inStream.destroy();
 		});
+
+		let realEnd = outStream.end;
+
+		// TODO Called twice for some odd reason
+		outStream.end = function (data, encoding, callback) {
+			if (data) {
+				outStream.write(data, encoding);
+			}
+
+			outStream.write({
+				_type_: 'end'
+			});
+
+			realEnd.call(outStream, undefined, undefined, callback);
+			outStream.end = function () {
+			};
+		};
+
 		socket.
 			pipe(lengthPrefixedStream.decode()).
 			pipe(decodeStream()).
@@ -166,21 +194,31 @@ module.exports = function (localServiceName, options) {
 
 					if (method) {
 						try {
-							method(data.args, inStream, outStream);
-							callback();
+							let result = method(data.args, inStream, outStream);
+							if (result && result.then && result.catch) {
+								result.
+									then(function () {
+										callback();
+									}).catch(function (err) {
+										outStream.end({
+											_type_: 'error',
+											_message_: err.message
+										});
+									});
+							} else {
+								callback();
+							}
 						} catch (err) {
 							outStream.end({
 								_type_: 'error',
 								_message_: err.message
 							});
-							callback(err.message);
 						}
 					} else {
 						outStream.end({
 							_type_: 'error',
 							_message_: localServiceName + ':' + data.cmd + ' Does not exist'
 						});
-						callback(localServiceName + ':' + data.cmd + ' Does not exist');
 					}
 				} else {
 					callback(null, data);
