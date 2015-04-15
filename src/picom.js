@@ -7,35 +7,20 @@ let through2 = require('through2');
 let _ = require('highland');
 let msgpack = require('msgpack');
 let lengthPrefixedStream = require('length-prefixed-stream');
-let RoundRobin = require('./roundrobin');
-let availableServices = {};
 
-// Add a service to the services repository
-function onServiceUp(remotesServiceName, remoteServiceProperties) {
+function getNextService(remoteServiceName) {
+	let allServices = polo.all();
 
-	if (!availableServices[remotesServiceName]) {
-		availableServices[remotesServiceName] = new RoundRobin();
-	}
-
-	availableServices[remotesServiceName].push({
-		host: remoteServiceProperties.host,
-		port: remoteServiceProperties.port
-	});
-}
-
-// Remove a service from the services repository
-function onServiceDown(remoteServiceName, remoteServiceProperties) {
-
-	if (availableServices[remoteServiceName]) {
-
-		// Find the service index
-		let index = availableServices[remoteServiceName].findIndex(function (service) {
-			// We are matching the service by host and port
-			return service.host === remoteServiceProperties.host && service.port === remoteServiceProperties.port;
-		});
-
-		// Remove it
-		availableServices[remoteServiceName].splice(index, 1);
+	if (allServices && allServices[remoteServiceName]) {
+		if (allServices[remoteServiceName].hasOwnProperty('index')) {
+			if (allServices[remoteServiceName].index >= allServices[remoteServiceName].length) {
+				allServices[remoteServiceName].index = 0;
+			}
+			return allServices[remoteServiceName][allServices[remoteServiceName].index++];
+		} else {
+			allServices[remoteServiceName].index = 0;
+			return getNextService((remoteServiceName));
+		}
 	}
 }
 
@@ -59,10 +44,6 @@ function encodeStream() {
 	});
 }
 
-// Start listening for remote services
-polo.on('up', onServiceUp);
-polo.on('down', onServiceDown);
-
 // We are load balancing between same service type
 module.exports = function (localServiceName, options) {
 	let methods = {};
@@ -71,7 +52,7 @@ module.exports = function (localServiceName, options) {
 
 	function stream(args, streamingPayload) {
 		// Try round robin a service
-		let remoteService = availableServices[args.service] ? availableServices[args.service].next() : null;
+		let remoteService = getNextService(args.service);
 		if (!remoteService) {
 			throw new Error('Invalid service name "' + args.service + '" or service is down.');
 		}
@@ -169,6 +150,7 @@ module.exports = function (localServiceName, options) {
 
 		let realEnd = outStream.end;
 
+		// Monkey patching stream
 		// TODO Called twice for some odd reason
 		outStream.end = function (data, encoding, callback) {
 			if (data) {
