@@ -28,7 +28,6 @@ function decodeStream() {
 	// TODO use consume when https://github.com/caolan/highland/issues/265 is fixed
 	return through2.obj(function (chunk, enc, callback) {
 		try {
-			//callback(null, JSON.parse(chunk.toString()));
 			callback(null, msgpack.unpack(chunk));
 		} catch (err) {
 			callback(err);
@@ -39,7 +38,6 @@ function decodeStream() {
 function encodeStream() {
 	// TODO use consume when https://github.com/caolan/highland/issues/265 is fixed
 	return through2.obj(function (chunk, enc, callback) {
-		//callback(null, JSON.stringify(chunk));
 		callback(null, msgpack.pack(chunk));
 	});
 }
@@ -51,6 +49,7 @@ module.exports = function (localServiceName, options) {
 	options = options || {};
 
 	function stream(args, streamingPayload) {
+
 		// Try round robin a service
 		let remoteService = getNextService(args.service);
 		if (!remoteService) {
@@ -69,6 +68,7 @@ module.exports = function (localServiceName, options) {
 					args: args.args
 				});
 
+				// TODO Write end if no streaming payload ?
 				// Write or stream the payload
 				if (streamingPayload) {
 					streamingPayload.pipe(outStream);
