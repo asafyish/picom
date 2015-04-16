@@ -3,7 +3,7 @@
 let net = require('net');
 let Polo = require('polo');
 let polo = new Polo();
-let through2 = require('through2');
+//let through2 = require('through2');
 let transform = require('stream-transform');
 let msgpack = require('msgpack');
 let lengthPrefixedStream = require('length-prefixed-stream');
@@ -25,7 +25,7 @@ function getNextService(remoteServiceName) {
 }
 
 function decodeStream() {
-	return through2.obj(function (chunk, enc, callback) {
+	return transform(function (chunk, callback) {
 		try {
 			callback(null, msgpack.unpack(chunk));
 		} catch (err) {
@@ -35,7 +35,7 @@ function decodeStream() {
 }
 
 function encodeStream(flushFunction) {
-	return through2.obj(null, function (chunk, enc, callback) {
+	return transform(function (chunk, callback) {
 		callback(null, msgpack.pack(chunk));
 	}, flushFunction);
 }
@@ -74,7 +74,7 @@ module.exports = function (localServiceName, options) {
 
 		let isConnectionTerminatedCorrectly = false;
 
-		let newSocket = socket.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(through2.obj(function (data, enc, callback) {
+		let newSocket = socket.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(transform(function (data, callback) {
 			if (data._type_ === 'error') {
 				return callback(new Error(data._message_));
 			} else if (data._type_ === 'end') {
@@ -93,6 +93,7 @@ module.exports = function (localServiceName, options) {
 			callback(new Error('Connection droped'));
 		}));
 
+		return newSocket;
 		// Return "plain" socket
 		if (args.noWrapping) {
 			return newSocket;
@@ -108,7 +109,7 @@ module.exports = function (localServiceName, options) {
 			args.noWrapping = true;
 			let s = stream(args, payload);
 			s.on('error', reject);
-			s.pipe(through2.obj(function (chunk, enc, callback) {
+			s.pipe(transform(function (chunk, callback) {
 				arr.push(chunk);
 				callback();
 			}, function (callback) {
@@ -170,7 +171,7 @@ module.exports = function (localServiceName, options) {
 		socket.
 			pipe(lengthPrefixedStream.decode()).
 			pipe(decodeStream()).
-			pipe(through2.obj(function (data, enc, callback) {
+			pipe(transform(function (data, callback) {
 				if (isFirstMessage) {
 					isFirstMessage = false;
 					let method = methods[data.cmd];
