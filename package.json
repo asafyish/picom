@@ -26,6 +26,7 @@
 		"highland": "2.4.0",
 		"length-prefixed-stream": "1.1.0",
 		"through2": "0.6.5",
+		"stream-transform": "0.0.7",
 		"msgpack": "0.2.6"
 	},
 	"devDependencies": {

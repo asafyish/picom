@@ -2,6 +2,7 @@
 
 // Mocha setup
 var chai = require('chai');
+var fs = require('fs');
 var expect = chai.expect;
 var _ = require('highland');
 
@@ -48,6 +49,28 @@ describe('picom', function () {
 				cmd: 'streamEcho',
 				args: args
 			}, inStream).pipe(outStream);
+		});
+		service2.expose('fetchEchoNext', function (args, inStream, outStream) {
+			let fork1 = inStream.fork();
+			let fork2 = inStream.fork();
+
+			service2.fetch({
+				service: 'service1',
+				cmd: 'streamEcho',
+				multiple: true,
+				args: args
+			}, fork1).then(function (response) {
+				service2.fetch({
+					service: 'service1',
+					cmd: 'streamEcho',
+					multiple: true,
+					args: args
+				}, fork2).then(function (data) {
+					outStream.end(data);
+				});
+			});
+
+			inStream.resume();
 		});
 		service2.expose('emptyResponse', function (args, inStream, outStream) {
 			service2.fetch({
@@ -165,9 +188,21 @@ describe('picom', function () {
 			});
 		});
 
-		it('should call service with a stream payload', function (done) {
+		it.only('should call service with a stream payload', function (done) {
 			let arr = [1, 2, 3, 4];
 			let payload = _(arr);
+			service3.stream({
+				service: 'service1',
+				cmd: 'streamEcho'
+			}, payload).toArray(function (response) {
+				expect(response).to.deep.equal(arr);
+				done();
+			});
+		});
+
+		it.skip('should call service with a file stream', function (done) {
+			let payload = fs.createReadStream('./test/dummy.txt');
+
 			service3.stream({
 				service: 'service1',
 				cmd: 'streamEcho'
@@ -210,6 +245,19 @@ describe('picom', function () {
 				service: 'service1',
 				cmd: 'streamEcho',
 				multiple: true
+			}, payload).then(function (response) {
+				expect(response).to.deep.equal(arr);
+				done();
+			}).catch(done);
+		});
+
+		it('should call using the promise api and spread the stream to multiple services', function (done) {
+			let arr = [1, 2, 3, 4];
+			let payload = _(arr);
+
+			service2.fetch({
+				service: 'service2',
+				cmd: 'fetchEchoNext'
 			}, payload).then(function (response) {
 				expect(response).to.deep.equal(arr);
 				done();

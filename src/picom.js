@@ -4,7 +4,7 @@ let net = require('net');
 let Polo = require('polo');
 let polo = new Polo();
 let through2 = require('through2');
-let _ = require('highland');
+let transform = require('stream-transform');
 let msgpack = require('msgpack');
 let lengthPrefixedStream = require('length-prefixed-stream');
 
@@ -25,7 +25,6 @@ function getNextService(remoteServiceName) {
 }
 
 function decodeStream() {
-	// TODO use consume when https://github.com/caolan/highland/issues/265 is fixed
 	return through2.obj(function (chunk, enc, callback) {
 		try {
 			callback(null, msgpack.unpack(chunk));
@@ -35,11 +34,10 @@ function decodeStream() {
 	});
 }
 
-function encodeStream() {
-	// TODO use consume when https://github.com/caolan/highland/issues/265 is fixed
-	return through2.obj(function (chunk, enc, callback) {
+function encodeStream(flushFunction) {
+	return through2.obj(null, function (chunk, enc, callback) {
 		callback(null, msgpack.pack(chunk));
-	});
+	}, flushFunction);
 }
 
 // We are load balancing between same service type
@@ -68,7 +66,6 @@ module.exports = function (localServiceName, options) {
 					args: args.args
 				});
 
-				// TODO Write end if no streaming payload ?
 				// Write or stream the payload
 				if (streamingPayload) {
 					streamingPayload.pipe(outStream);
@@ -77,8 +74,7 @@ module.exports = function (localServiceName, options) {
 
 		let isConnectionTerminatedCorrectly = false;
 
-		// Return highland stream
-		return _(socket.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(through2.obj(function (data, enc, callback) {
+		let newSocket = socket.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(through2.obj(function (data, enc, callback) {
 			if (data._type_ === 'error') {
 				return callback(new Error(data._message_));
 			} else if (data._type_ === 'end') {
@@ -95,24 +91,38 @@ module.exports = function (localServiceName, options) {
 			}
 
 			callback(new Error('Connection droped'));
-		})));
+		}));
+
+		// Return "plain" socket
+		if (args.noWrapping) {
+			return newSocket;
+		}
+
+		// Return highland stream
+		return _(newSocket);
 	}
 
 	function fetch(args, payload) {
 		return new Promise(function (resolve, reject) {
+			let arr = [];
+			args.noWrapping = true;
 			let s = stream(args, payload);
 			s.on('error', reject);
-			s.toArray(function (result) {
+			s.pipe(through2.obj(function (chunk, enc, callback) {
+				arr.push(chunk);
+				callback();
+			}, function (callback) {
 				if (args.multiple) {
-					resolve(result);
+					resolve(arr);
 				} else {
-					if (result && result[0]) {
-						resolve(result[0]);
+					if (arr && arr[0]) {
+						resolve(arr[0]);
 					} else {
 						resolve();
 					}
 				}
-			});
+				callback();
+			}));
 		});
 	}
 
@@ -137,8 +147,17 @@ module.exports = function (localServiceName, options) {
 	let server = net.createServer({allowHalfOpen: true}, function (socket) {
 
 		let isFirstMessage = true;
-		let inStream = _(encodeStream());
-		let outStream = encodeStream();
+		let inStream = encodeStream();
+
+		// If we reach the flush function, it means everything went ok - send the end marker
+		let outStream = encodeStream(function (callback) {
+			this.end({
+				_type_: 'end'
+			});
+			callback();
+		});
+
+		// Outstream encodes the data and pipe it to socket
 		outStream.pipe(lengthPrefixedStream.encode()).pipe(socket);
 
 		socket.on('close', function (hadError) {
@@ -147,24 +166,6 @@ module.exports = function (localServiceName, options) {
 		socket.on('error', function (err) {
 			inStream.destroy();
 		});
-
-		let realEnd = outStream.end;
-
-		// Monkey patching stream
-		// TODO Called twice for some odd reason
-		outStream.end = function (data, encoding, callback) {
-			if (data) {
-				outStream.write(data, encoding);
-			}
-
-			outStream.write({
-				_type_: 'end'
-			});
-
-			realEnd.call(outStream, undefined, undefined, callback);
-			outStream.end = function () {
-			};
-		};
 
 		socket.
 			pipe(lengthPrefixedStream.decode()).
@@ -231,7 +232,6 @@ module.exports = function (localServiceName, options) {
 		stream: stream,
 		fetch: fetch,
 		expose: expose,
-		start: start,
-		_: _
+		start: start
 	};
 };
