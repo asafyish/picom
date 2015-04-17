@@ -3,8 +3,7 @@
 let net = require('net');
 let Polo = require('polo');
 let polo = new Polo();
-//let through2 = require('through2');
-let transform = require('stream-transform');
+let through2 = require('through2');
 let msgpack = require('msgpack');
 let lengthPrefixedStream = require('length-prefixed-stream');
 
@@ -25,17 +24,13 @@ function getNextService(remoteServiceName) {
 }
 
 function decodeStream() {
-	return transform(function (chunk, callback) {
-		try {
-			callback(null, msgpack.unpack(chunk));
-		} catch (err) {
-			callback(err);
-		}
+	return through2.obj(function (chunk, enc, callback) {
+		callback(null, msgpack.unpack(chunk));
 	});
 }
 
 function encodeStream(flushFunction) {
-	return transform(function (chunk, callback) {
+	return through2.obj(null, function (chunk, enc, callback) {
 		callback(null, msgpack.pack(chunk));
 	}, flushFunction);
 }
@@ -67,14 +62,14 @@ module.exports = function (localServiceName, options) {
 				});
 
 				// Write or stream the payload
-				if (streamingPayload) {
+				if (streamingPayload && streamingPayload.pipe) {
 					streamingPayload.pipe(outStream);
 				}
 			});
 
 		let isConnectionTerminatedCorrectly = false;
 
-		let newSocket = socket.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(transform(function (data, callback) {
+		let newSocket = socket.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(through2.obj(function (data, enc, callback) {
 			if (data._type_ === 'error') {
 				return callback(new Error(data._message_));
 			} else if (data._type_ === 'end') {
@@ -94,36 +89,28 @@ module.exports = function (localServiceName, options) {
 		}));
 
 		return newSocket;
-		// Return "plain" socket
-		if (args.noWrapping) {
-			return newSocket;
-		}
-
-		// Return highland stream
-		return _(newSocket);
 	}
 
 	function fetch(args, payload) {
 		return new Promise(function (resolve, reject) {
-			let arr = [];
-			args.noWrapping = true;
-			let s = stream(args, payload);
-			s.on('error', reject);
-			s.pipe(transform(function (chunk, callback) {
-				arr.push(chunk);
-				callback();
-			}, function (callback) {
-				if (args.multiple) {
-					resolve(arr);
-				} else {
-					if (arr && arr[0]) {
-						resolve(arr[0]);
+			let response = [];
+			stream(args, payload).
+				pipe(through2.obj(function (chunk, enc, callback) {
+					response.push(chunk);
+					callback();
+				}, function (callback) {
+					if (args.multiple) {
+						resolve(response);
 					} else {
-						resolve();
+						if (response.length > 0) {
+							resolve(response[0]);
+						} else {
+							resolve();
+						}
 					}
-				}
-				callback();
-			}));
+					callback();
+				})).
+				on('error', reject);
 		});
 	}
 
@@ -131,28 +118,16 @@ module.exports = function (localServiceName, options) {
 		methods[methodName] = callback;
 	}
 
-	function start() {
-		portPromise.then(function (value) {
-			// Publish the service type and random port
-			polo.put({
-				name: localServiceName,
-				port: value
-			});
-
-			process.on('exit', function () {
-				polo.stop();
-			});
-		});
-	}
-
 	let server = net.createServer({allowHalfOpen: true}, function (socket) {
 
 		let isFirstMessage = true;
-		let inStream = encodeStream();
+		let inStream = through2.obj(function (chunk, enc, callback) {
+			callback(null, chunk);
+		});
 
 		// If we reach the flush function, it means everything went ok - send the end marker
 		let outStream = encodeStream(function (callback) {
-			this.end({
+			this.write({
 				_type_: 'end'
 			});
 			callback();
@@ -161,37 +136,25 @@ module.exports = function (localServiceName, options) {
 		// Outstream encodes the data and pipe it to socket
 		outStream.pipe(lengthPrefixedStream.encode()).pipe(socket);
 
-		socket.on('close', function (hadError) {
+		socket.on('close', function () {
 			inStream.destroy();
 		});
-		socket.on('error', function (err) {
+		socket.on('error', function () {
 			inStream.destroy();
 		});
 
 		socket.
 			pipe(lengthPrefixedStream.decode()).
 			pipe(decodeStream()).
-			pipe(transform(function (data, callback) {
+			pipe(through2.obj(function (data, enc, callback) {
 				if (isFirstMessage) {
 					isFirstMessage = false;
 					let method = methods[data.cmd];
 
 					if (method) {
 						try {
-							let result = method(data.args, inStream, outStream);
-							if (result && result.then && result.catch) {
-								result.
-									then(function () {
-										callback();
-									}).catch(function (err) {
-										outStream.end({
-											_type_: 'error',
-											_message_: err.message
-										});
-									});
-							} else {
-								callback();
-							}
+							method(data.args, inStream, outStream);
+							callback();
 						} catch (err) {
 							outStream.end({
 								_type_: 'error',
@@ -222,6 +185,20 @@ module.exports = function (localServiceName, options) {
 			resolve(address.port);
 		});
 	});
+
+	function start() {
+		portPromise.then(function (value) {
+			// Publish the service type and random port
+			polo.put({
+				name: localServiceName,
+				port: value
+			});
+
+			process.on('exit', function () {
+				polo.stop();
+			});
+		});
+	}
 
 	portPromise.then(function () {
 		if (options.autoStart) {
