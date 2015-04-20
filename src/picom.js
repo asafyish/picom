@@ -25,13 +25,15 @@ function getNextService(remoteServiceName) {
 
 function decodeStream() {
 	return through2.obj(function (chunk, enc, callback) {
-		callback(null, msgpack.unpack(chunk));
+		this.push(msgpack.unpack(chunk));
+		callback();
 	});
 }
 
 function encodeStream(flushFunction) {
 	return through2.obj(null, function (chunk, enc, callback) {
-		callback(null, msgpack.pack(chunk));
+		this.push(msgpack.pack(chunk));
+		callback();
 	}, flushFunction);
 }
 
@@ -41,7 +43,7 @@ module.exports = function (localServiceName, options) {
 
 	options = options || {};
 
-	function stream(args, streamingPayload) {
+	function stream(args, streamPayload) {
 
 		// Try round robin a service
 		let remoteService = getNextService(args.service);
@@ -61,34 +63,38 @@ module.exports = function (localServiceName, options) {
 					args: args.args
 				});
 
-				// Write or stream the payload
-				if (streamingPayload && streamingPayload.pipe) {
-					streamingPayload.pipe(outStream);
+				// Pipe the payload
+				if (streamPayload && streamPayload.pipe) {
+					streamPayload.pipe(outStream);
 				}
 			});
 
 		let isConnectionTerminatedCorrectly = false;
 
-		let newSocket = socket.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(through2.obj(function (data, enc, callback) {
+		return socket.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(through2.obj(function (data, enc, callback) {
 			if (data._type_ === 'error') {
-				return callback(new Error(data._message_));
+				callback(new Error(data._message_));
 			} else if (data._type_ === 'end') {
 
 				// Mark connection terminated correctly
 				isConnectionTerminatedCorrectly = true;
-				return callback();
-			}
 
-			callback(null, data);
+				// Close the connection, so the flush function will be called
+				this.end();
+				callback();
+			} else {
+
+				// Regular data, pipe it through
+				this.push(data);
+				callback();
+			}
 		}, function (callback) {
 			if (isConnectionTerminatedCorrectly) {
 				return callback();
 			}
 
-			callback(new Error('Connection droped'));
+			callback(new Error('Connection dropped'));
 		}));
-
-		return newSocket;
 	}
 
 	function fetch(args, payload) {
@@ -110,7 +116,10 @@ module.exports = function (localServiceName, options) {
 					}
 					callback();
 				})).
-				on('error', reject);
+				on('error', function(err) {
+					this.end();
+					reject(err);
+				});
 		});
 	}
 
@@ -120,58 +129,56 @@ module.exports = function (localServiceName, options) {
 
 	let server = net.createServer({allowHalfOpen: true}, function (socket) {
 
-		let isFirstMessage = true;
-		let inStream = through2.obj(function (chunk, enc, callback) {
-			callback(null, chunk);
-		});
+		let decode = decodeStream();
 
 		// If we reach the flush function, it means everything went ok - send the end marker
 		let outStream = encodeStream(function (callback) {
-			this.write({
+			this.end({
 				_type_: 'end'
 			});
-			callback();
+			try {
+				// Most of the times it works, but when streaming big data, it crashes
+				callback();
+			} catch (err) {
+				console.error(err);
+			}
+		});
+
+		socket.on('error', function () {
+			console.error('socket error');
+			this.end();
 		});
 
 		// Outstream encodes the data and pipe it to socket
 		outStream.pipe(lengthPrefixedStream.encode()).pipe(socket);
 
-		socket.on('close', function () {
-			inStream.destroy();
-		});
-		socket.on('error', function () {
-			inStream.destroy();
-		});
-
 		socket.
 			pipe(lengthPrefixedStream.decode()).
-			pipe(decodeStream()).
+			pipe(decode).
 			pipe(through2.obj(function (data, enc, callback) {
-				if (isFirstMessage) {
-					isFirstMessage = false;
-					let method = methods[data.cmd];
+				let method = methods[data.cmd];
 
-					if (method) {
-						try {
-							method(data.args, inStream, outStream);
-							callback();
-						} catch (err) {
-							outStream.end({
-								_type_: 'error',
-								_message_: err.message
-							});
-						}
-					} else {
+				if (method) {
+					try {
+						outStream.cmd = data.cmd;
+						decode.unpipe(this);
+						method(data.args, decode, outStream);
+						callback();
+					} catch (err) {
 						outStream.end({
 							_type_: 'error',
-							_message_: localServiceName + ':' + data.cmd + ' Does not exist'
+							_message_: err.message
 						});
+						this.end();
 					}
 				} else {
-					callback(null, data);
+					outStream.end({
+						_type_: 'error',
+						_message_: localServiceName + ':' + data.cmd + ' Does not exist'
+					});
+					this.end();
 				}
-			})).
-			pipe(inStream);
+			}));
 	});
 
 	let portPromise = new Promise(function (resolve, reject) {

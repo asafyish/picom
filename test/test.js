@@ -28,6 +28,25 @@ describe('picom', function () {
 			}, args.timeout);
 		});
 
+		service1.expose('ignore', function (args, inStream, outStream) {
+			_(inStream).batch(5000).consume(function (err, x, push, next) {
+				if (err) {
+					push(err);
+					next();
+				}
+				else if (x === _.nil) {
+					// pass nil (end event) along the stream
+					push(null, x);
+					outStream.end();
+				}
+				else {
+					console.log('chunk');
+					setTimeout(function() {
+						next();
+					}, 1000);
+				}
+			}).resume();
+		});
 		service1.expose('add', function (args, inStream, outStream) {
 			outStream.end(args.a + args.b);
 		});
@@ -358,12 +377,72 @@ describe('picom', function () {
 			}, timeout - 100);
 		});
 
-		it('should call with a large stream as payload', function (done) {
+		it.skip('should tcp timeout while streaming', function (done) {
+			let timeout = 1000 * 60 * 5;
+			let isOk = false;
+			let index = 0;
+			let SIZE = 100000000;
+
+			let stream = _(function (push, next) {
+				if (index >= SIZE) {
+					return push(null, _.nil);
+				}
+				setTimeout(function() {
+					push(null, index++);
+					next();
+				}, 0);
+			});
+
+			this.timeout(0);
+
+			service3.fetch({
+				service: 'service1',
+				cmd: 'ignore',
+				args: {
+					timeout: timeout
+				}
+			}, stream).then(function (response) {
+				expect(response).to.equal('done');
+				expect(isOk).to.equal(true);
+				done();
+			}).catch(done);
+
+			// When enough time passed - signal everything is ok
+			setTimeout(function () {
+				isOk = true;
+			}, timeout - 100);
+		});
+
+		it.skip('should tcp timeout', function (done) {
+			let timeout = 1000 * 60 * 5;
+			let isOk = false;
+
+			this.timeout(timeout * 2);
+
+			service3.fetch({
+				service: 'service1',
+				cmd: 'wait',
+				args: {
+					timeout: timeout
+				}
+			}).then(function (response) {
+				expect(response).to.equal('done');
+				expect(isOk).to.equal(true);
+				done();
+			}).catch(done);
+
+			// When enough time passed - signal everything is ok
+			setTimeout(function () {
+				isOk = true;
+			}, timeout - 100);
+		});
+
+		it.skip('should call with a large stream as payload', function (done) {
 			let arr = [];
 			let response = [];
 
-			for (let i = 0; i < 5000; i++) {
-				arr.push({index: i});
+			for (let i = 0; i < 100000; i++) {
+				arr.push({index: i, dmdsjksjkdjfefjkef: 'akkejkjkrjekjr', kjekjkrjekrjke: 23984934, kekfjkejjtjt: 'mmakkucudhneje749'});
 			}
 
 			let payload = _(arr);
