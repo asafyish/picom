@@ -1,10 +1,10 @@
 'use strict';
 
 let net = require('net');
+let domain = require('domain');
 let Polo = require('polo');
 let polo = new Polo();
 let through2 = require('through2');
-let _ = require('highland');
 let msgpack = require('msgpack');
 let lengthPrefixedStream = require('length-prefixed-stream');
 
@@ -25,21 +25,17 @@ function getNextService(remoteServiceName) {
 }
 
 function decodeStream() {
-	// TODO use consume when https://github.com/caolan/highland/issues/265 is fixed
 	return through2.obj(function (chunk, enc, callback) {
-		try {
-			callback(null, msgpack.unpack(chunk));
-		} catch (err) {
-			callback(err);
-		}
+		this.push(msgpack.unpack(chunk));
+		callback();
 	});
 }
 
-function encodeStream() {
-	// TODO use consume when https://github.com/caolan/highland/issues/265 is fixed
-	return through2.obj(function (chunk, enc, callback) {
-		callback(null, msgpack.pack(chunk));
-	});
+function encodeStream(flushFunction) {
+	return through2.obj(null, function (chunk, enc, callback) {
+		this.push(msgpack.pack(chunk));
+		callback();
+	}, flushFunction);
 }
 
 // We are load balancing between same service type
@@ -48,7 +44,7 @@ module.exports = function (localServiceName, options) {
 
 	options = options || {};
 
-	function stream(args, streamingPayload) {
+	function stream(args, streamPayload) {
 
 		// Try round robin a service
 		let remoteService = getNextService(args.service);
@@ -68,57 +64,154 @@ module.exports = function (localServiceName, options) {
 					args: args.args
 				});
 
-				// TODO Write end if no streaming payload ?
-				// Write or stream the payload
-				if (streamingPayload) {
-					streamingPayload.pipe(outStream);
+				// Pipe the payload
+				if (streamPayload && streamPayload.pipe) {
+					streamPayload.pipe(outStream);
 				}
 			});
 
 		let isConnectionTerminatedCorrectly = false;
 
-		// Return highland stream
-		return _(socket.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(through2.obj(function (data, enc, callback) {
+		return socket.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(through2.obj(function (data, enc, callback) {
 			if (data._type_ === 'error') {
-				return callback(new Error(data._message_));
+				callback(new Error(data._message_));
 			} else if (data._type_ === 'end') {
 
 				// Mark connection terminated correctly
 				isConnectionTerminatedCorrectly = true;
-				return callback();
-			}
 
-			callback(null, data);
+				// Close the connection, so the flush function will be called
+				this.end();
+				callback();
+			} else {
+
+				// Regular data, pipe it through
+				this.push(data);
+				callback();
+			}
 		}, function (callback) {
 			if (isConnectionTerminatedCorrectly) {
 				return callback();
 			}
 
-			callback(new Error('Connection droped'));
-		})));
+			callback(new Error('Connection dropped'));
+		}));
 	}
 
 	function fetch(args, payload) {
 		return new Promise(function (resolve, reject) {
-			let s = stream(args, payload);
-			s.on('error', reject);
-			s.toArray(function (result) {
-				if (args.multiple) {
-					resolve(result);
-				} else {
-					if (result && result[0]) {
-						resolve(result[0]);
+			let response = [];
+			stream(args, payload).
+				pipe(through2.obj(function (chunk, enc, callback) {
+					response.push(chunk);
+					callback();
+				}, function (callback) {
+					if (args.multiple) {
+						resolve(response);
 					} else {
-						resolve();
+						if (response.length > 0) {
+							resolve(response[0]);
+						} else {
+							resolve();
+						}
 					}
-				}
-			});
+					callback();
+				})).
+				on('error', function (err) {
+					this.end();
+					reject(err);
+				});
 		});
 	}
 
 	function expose(methodName, callback) {
 		methods[methodName] = callback;
 	}
+
+	let server = net.createServer({allowHalfOpen: true}, function (socket) {
+
+		let decode = decodeStream();
+
+		// If we reach the flush function, it means everything went ok - send the end marker
+		let outStream = encodeStream(function (callback) {
+			this.end({
+				_type_: 'end'
+			});
+			try {
+				// Most of the times it works, but when streaming big data, it crashes
+				callback();
+			} catch (err) {
+				console.error(err);
+			}
+		});
+
+		let errorHandler = domain.create();
+		errorHandler.on('error', function (err) {
+
+			// Inform the other side about the error and close the connection.
+			outStream.end({
+				_type_: 'error',
+				_message_: err.message
+			});
+
+			socket.end();
+		});
+
+		outStream.on('end', function () {
+			console.log('outStream end: %s', outStream.cmd);
+		});
+
+		socket.on('error', function () {
+			console.error('socket error');
+
+			// Incase of error, we need to manually close the socket
+			this.end();
+		});
+
+		// Outstream encodes the data and pipe it to socket
+		outStream.pipe(lengthPrefixedStream.encode()).pipe(socket);
+
+		socket.
+			pipe(lengthPrefixedStream.decode()).
+			pipe(decode).
+			pipe(through2.obj(function (data, enc, callback) {
+				let method = methods[data.cmd];
+
+				if (method) {
+					outStream.cmd = data.cmd;
+
+					// After parsing the header, remove this handler from processing
+					decode.unpipe(this);
+
+					// Catch sync and async errors
+					errorHandler.run(function () {
+						method(data.args, decode, outStream);
+					});
+
+					callback();
+				} else {
+					// Method not found
+					outStream.end({
+						_type_: 'error',
+						_message_: localServiceName + ':' + data.cmd + ' Does not exist'
+					});
+
+					this.end();
+				}
+			}));
+	});
+
+	let portPromise = new Promise(function (resolve, reject) {
+		// Start listening on a random port
+		server.listen(function (err) {
+
+			if (err) {
+				return reject(err);
+			}
+			let address = server.address();
+			resolve(address.port);
+		});
+	});
 
 	function start() {
 		portPromise.then(function (value) {
@@ -134,93 +227,6 @@ module.exports = function (localServiceName, options) {
 		});
 	}
 
-	let server = net.createServer({allowHalfOpen: true}, function (socket) {
-
-		let isFirstMessage = true;
-		let inStream = _(encodeStream());
-		let outStream = encodeStream();
-		outStream.pipe(lengthPrefixedStream.encode()).pipe(socket);
-
-		socket.on('close', function (hadError) {
-			inStream.destroy();
-		});
-		socket.on('error', function (err) {
-			inStream.destroy();
-		});
-
-		let realEnd = outStream.end;
-
-		// Monkey patching stream
-		// TODO Called twice for some odd reason
-		outStream.end = function (data, encoding, callback) {
-			if (data) {
-				outStream.write(data, encoding);
-			}
-
-			outStream.write({
-				_type_: 'end'
-			});
-
-			realEnd.call(outStream, undefined, undefined, callback);
-			outStream.end = function () {
-			};
-		};
-
-		socket.
-			pipe(lengthPrefixedStream.decode()).
-			pipe(decodeStream()).
-			pipe(through2.obj(function (data, enc, callback) {
-				if (isFirstMessage) {
-					isFirstMessage = false;
-					let method = methods[data.cmd];
-
-					if (method) {
-						try {
-							let result = method(data.args, inStream, outStream);
-							if (result && result.then && result.catch) {
-								result.
-									then(function () {
-										callback();
-									}).catch(function (err) {
-										outStream.end({
-											_type_: 'error',
-											_message_: err.message
-										});
-									});
-							} else {
-								callback();
-							}
-						} catch (err) {
-							outStream.end({
-								_type_: 'error',
-								_message_: err.message
-							});
-						}
-					} else {
-						outStream.end({
-							_type_: 'error',
-							_message_: localServiceName + ':' + data.cmd + ' Does not exist'
-						});
-					}
-				} else {
-					callback(null, data);
-				}
-			})).
-			pipe(inStream);
-	});
-
-	let portPromise = new Promise(function (resolve, reject) {
-		// Start listening on a random port
-		server.listen(function (err) {
-
-			if (err) {
-				return reject(err);
-			}
-			let address = server.address();
-			resolve(address.port);
-		});
-	});
-
 	portPromise.then(function () {
 		if (options.autoStart) {
 			start();
@@ -231,7 +237,6 @@ module.exports = function (localServiceName, options) {
 		stream: stream,
 		fetch: fetch,
 		expose: expose,
-		start: start,
-		_: _
+		start: start
 	};
 };
