@@ -62,9 +62,13 @@ describe('picom', function () {
 			// Empty on purpose
 		});
 
-		// FIXME This is the problem
+		service1.expose('async-fail', Promise.coroutine(function*(args, inStream, outStream) {
+			setTimeout(function() {
+				throw new Error(REQUEST_ERROR);
+			}, 1000);
+		}));
+
 		service1.expose('promise-yield-fetch', Promise.coroutine(function*(args, inStream, outStream) {
-			// FIXME Never returns
 			let response = yield service2.fetch({
 				service: 'service1',
 				cmd: 'streamEcho',
@@ -618,6 +622,26 @@ describe('picom', function () {
 			} catch (err) {
 				done();
 			}
+		});
+
+		it('should get a failed response from async service', function (done) {
+			service3.stream({
+				service: 'service1',
+				cmd: 'async-fail'
+			}).on('error', function (err) {
+				expect(err.message).to.equal(REQUEST_ERROR);
+				done();
+			});
+		});
+
+		it('should get a failed response from service', function (done) {
+			service3.stream({
+				service: 'service2',
+				cmd: 'throws'
+			}).on('error', function (err) {
+				expect(err.message).to.equal(REQUEST_ERROR);
+				done();
+			});
 		});
 
 		it('should get a failed response from service', function (done) {

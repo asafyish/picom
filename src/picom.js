@@ -1,6 +1,7 @@
 'use strict';
 
 let net = require('net');
+let domain = require('domain');
 let Polo = require('polo');
 let polo = new Polo();
 let through2 = require('through2');
@@ -116,7 +117,7 @@ module.exports = function (localServiceName, options) {
 					}
 					callback();
 				})).
-				on('error', function(err) {
+				on('error', function (err) {
 					this.end();
 					reject(err);
 				});
@@ -144,8 +145,26 @@ module.exports = function (localServiceName, options) {
 			}
 		});
 
+		let errorHandler = domain.create();
+		errorHandler.on('error', function (err) {
+
+			// Inform the other side about the error and close the connection.
+			outStream.end({
+				_type_: 'error',
+				_message_: err.message
+			});
+
+			socket.end();
+		});
+
+		outStream.on('end', function () {
+			console.log('outStream end: %s', outStream.cmd);
+		});
+
 		socket.on('error', function () {
 			console.error('socket error');
+
+			// Incase of error, we need to manually close the socket
 			this.end();
 		});
 
@@ -159,23 +178,24 @@ module.exports = function (localServiceName, options) {
 				let method = methods[data.cmd];
 
 				if (method) {
-					try {
-						outStream.cmd = data.cmd;
-						decode.unpipe(this);
+					outStream.cmd = data.cmd;
+
+					// After parsing the header, remove this handler from processing
+					decode.unpipe(this);
+
+					// Catch sync and async errors
+					errorHandler.run(function () {
 						method(data.args, decode, outStream);
-						callback();
-					} catch (err) {
-						outStream.end({
-							_type_: 'error',
-							_message_: err.message
-						});
-						this.end();
-					}
+					});
+
+					callback();
 				} else {
+					// Method not found
 					outStream.end({
 						_type_: 'error',
 						_message_: localServiceName + ':' + data.cmd + ' Does not exist'
 					});
+
 					this.end();
 				}
 			}));
