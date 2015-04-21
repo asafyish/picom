@@ -3,7 +3,9 @@
 let net = require('net');
 let domain = require('domain');
 let Polo = require('polo');
-let polo = new Polo();
+let polo = new Polo({
+	heartbeat: 10 * 60 * 1000
+});
 let through2 = require('through2');
 let msgpack = require('msgpack');
 let lengthPrefixedStream = require('length-prefixed-stream');
@@ -157,14 +159,10 @@ module.exports = function (localServiceName, options) {
 			socket.end();
 		});
 
-		outStream.on('end', function () {
-			console.log('outStream end: %s', outStream.cmd);
-		});
-
 		socket.on('error', function () {
 			console.error('socket error');
 
-			// Incase of error, we need to manually close the socket
+			// In case of error, we need to manually close the socket
 			this.end();
 		});
 
@@ -178,8 +176,6 @@ module.exports = function (localServiceName, options) {
 				let method = methods[data.cmd];
 
 				if (method) {
-					outStream.cmd = data.cmd;
-
 					// After parsing the header, remove this handler from processing
 					decode.unpipe(this);
 
