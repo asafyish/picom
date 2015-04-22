@@ -130,7 +130,7 @@ module.exports = function (localServiceName, options) {
 		methods[methodName] = callback;
 	}
 
-	let server = net.createServer({allowHalfOpen: true}, function (socket) {
+	function onConnection(socket) {
 
 		let decode = decodeStream();
 
@@ -148,7 +148,7 @@ module.exports = function (localServiceName, options) {
 		});
 
 		let errorHandler = domain.create();
-		errorHandler.on('error', function (err) {
+		errorHandler.once('error', function (err) {
 
 			// Inform the other side about the error and close the connection.
 			outStream.end({
@@ -195,7 +195,9 @@ module.exports = function (localServiceName, options) {
 					this.end();
 				}
 			}));
-	});
+	}
+
+	let server = net.createServer({allowHalfOpen: true}, onConnection);
 
 	let portPromise = new Promise(function (resolve, reject) {
 		// Start listening on a random port
