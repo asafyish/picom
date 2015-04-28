@@ -58,6 +58,22 @@ describe('picom', function () {
 			inStream.pipe(outStream);
 		});
 
+		service1.expose('streamEchoMultiply', function(args, inStream, outStream) {
+			let arr = [];
+			let size = parseInt(args.size * args.multiply);
+
+			for (let i = 0; i <= size; i++) {
+				arr.push({index: i, irjdjem4fk: 'akkejkjkrjekjr', almfjtl4: 23984934, kfkenrk5: 'mmakkucudhneje749'});
+			}
+
+			let payload = _(arr);
+
+			// Drain inStream
+			inStream.pipe(through.obj(function(chunk, enc, callback) {
+				callback();
+			}));
+			payload.pipe(outStream);
+		});
 		service1.expose('never-reply', function () {
 			// Empty on purpose
 		});
@@ -95,6 +111,14 @@ describe('picom', function () {
 			});
 		}));
 
+		service1.expose('promise-reject', Promise.coroutine(function*(args, inStream, outStream) {
+			return new Promise(function(resolve, reject) {
+				setTimeout(function() {
+					reject(new Error(REQUEST_ERROR));
+				}, 500);
+			});
+		}));
+
 		service2.expose('method1-service2', function (args, inStream, outStream) {
 			outStream.end('method1-service2-reply');
 		});
@@ -106,6 +130,7 @@ describe('picom', function () {
 			}, inStream).pipe(outStream);
 		});
 		service2.expose('fetchEchoNext', function (args, inStream, outStream) {
+			inStream = _(inStream);
 			let fork1 = inStream.fork();
 			let fork2 = inStream.fork();
 
@@ -247,10 +272,24 @@ describe('picom', function () {
 			}).catch(done);
 		});
 
-		it.skip('should call a service using promise api and catch an error', function (done) {
+		it('should call a service using promise api and catch an error', function (done) {
 			service3.fetch({
 				service: 'service2',
 				cmd: 'throws'
+			}).then(function(response) {
+
+				// This is an error
+				done(response);
+			}).catch(function (err) {
+				expect(err.message).to.equal(REQUEST_ERROR);
+				done();
+			});
+		});
+
+		it('should call a service using promise api and catch a rejection', function (done) {
+			service3.fetch({
+				service: 'service1',
+				cmd: 'promise-reject'
 			}).catch(function (err) {
 				expect(err.message).to.equal(REQUEST_ERROR);
 				done();
@@ -344,7 +383,7 @@ describe('picom', function () {
 			}).catch(done);
 		});
 
-		it.skip('should call using the promise api and spread the stream to multiple services', function (done) {
+		it('should call using the promise api and spread the stream to multiple services', function (done) {
 			let arr = [1, 2, 3, 4];
 			let payload = _(arr);
 
@@ -439,6 +478,74 @@ describe('picom', function () {
 			setTimeout(function () {
 				isOk = true;
 			}, timeout - 100);
+		});
+
+		it('should stream a large chunk, and receive smaller one', function (done) {
+			this.timeout(0);
+			let multiply = 0.2;
+			let arr = [];
+			let expectedResponse = [];
+			let response = [];
+			let size = 100000;
+
+			for (let i = 0; i <= size; i++) {
+				arr.push({index: i, dmdsjksjkdjfefjkef: 'akkejkjkrjekjr', kjekjkrjekrjke: 23984934, kekfjkejjtjt: 'mmakkucudhneje749'});
+			}
+
+			for (let i = 0; i <= size * multiply; i++) {
+				expectedResponse.push({index: i, irjdjem4fk: 'akkejkjkrjekjr', almfjtl4: 23984934, kfkenrk5: 'mmakkucudhneje749'});
+			}
+
+			let payload = _(arr);
+			service3.stream({
+				service: 'service1',
+				cmd: 'streamEchoMultiply',
+				args: {
+					size: size,
+					multiply: multiply
+				}
+			}, payload).pipe(through.obj(function (chunk, enc, callback) {
+				response.push(chunk);
+				callback();
+			}, function (callback) {
+				expect(response).to.deep.equal(expectedResponse);
+				done();
+				callback();
+			}));
+		});
+
+		it('should stream a large chunk, and receive even larger one', function (done) {
+			this.timeout(0);
+			let multiply = 10;
+			let arr = [];
+			let expectedResponse = [];
+			let response = [];
+			let size = 5000;
+
+			for (let i = 0; i <= size; i++) {
+				arr.push({index: i, mfkmkef: 'akkejkjkrjekjr', u48rowoe: 23984934, xbjj: 'mmakkucudhneje749'});
+			}
+
+			for (let i = 0; i <= size * multiply; i++) {
+				expectedResponse.push({index: i, irjdjem4fk: 'akkejkjkrjekjr', almfjtl4: 23984934, kfkenrk5: 'mmakkucudhneje749'});
+			}
+
+			let payload = _(arr);
+			service3.stream({
+				service: 'service1',
+				cmd: 'streamEchoMultiply',
+				args: {
+					size: size,
+					multiply: multiply
+				}
+			}, payload).pipe(through.obj(function (chunk, enc, callback) {
+				response.push(chunk);
+				callback();
+			}, function (callback) {
+				expect(response).to.deep.equal(expectedResponse);
+				done();
+				callback();
+			}));
 		});
 
 		it.skip('should call with a large stream as payload', function (done) {

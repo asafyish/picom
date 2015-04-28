@@ -72,15 +72,13 @@ module.exports = function (localServiceName, options) {
 				}
 			});
 
-		let isConnectionTerminatedCorrectly = false;
-
 		return socket.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(through2.obj(function (data, enc, callback) {
 			if (data._type_ === 'error') {
 				callback(new Error(data._message_));
 			} else if (data._type_ === 'end') {
 
 				// Mark connection terminated correctly
-				isConnectionTerminatedCorrectly = true;
+				this.isEndSeen = true;
 
 				// Close the connection, so the flush function will be called
 				this.end();
@@ -92,37 +90,37 @@ module.exports = function (localServiceName, options) {
 				callback();
 			}
 		}, function (callback) {
-			if (isConnectionTerminatedCorrectly) {
+			if (this.isEndSeen) {
 				return callback();
 			}
 
-			callback(new Error('Connection dropped'));
+			callback(new Error('Connection dropped by other side'));
 		}));
 	}
 
 	function fetch(args, payload) {
 		return new Promise(function (resolve, reject) {
 			let response = [];
-			stream(args, payload).
-				pipe(through2.obj(function (chunk, enc, callback) {
-					response.push(chunk);
-					callback();
-				}, function (callback) {
-					if (args.multiple) {
-						resolve(response);
+			let s = stream(args, payload);
+			s.pipe(through2.obj(function (chunk, enc, callback) {
+				response.push(chunk);
+				callback();
+			}, function (callback) {
+				if (args.multiple) {
+					resolve(response);
+				} else {
+					if (response.length > 0) {
+						resolve(response[0]);
 					} else {
-						if (response.length > 0) {
-							resolve(response[0]);
-						} else {
-							resolve();
-						}
+						resolve();
 					}
-					callback();
-				})).
-				on('error', function (err) {
-					this.end();
-					reject(err);
-				});
+				}
+				callback();
+			}));
+			s.once('error', function (err) {
+				reject(err);
+				//this.end();
+			});
 		});
 	}
 
@@ -134,29 +132,41 @@ module.exports = function (localServiceName, options) {
 
 		let decode = decodeStream();
 
-		// If we reach the flush function, it means everything went ok - send the end marker
-		let outStream = encodeStream(function (callback) {
-			this.end({
+		let outStream = encodeStream();
+
+		// Monkey patch the end method. Couldn't make all the tests pass without it
+		outStream.originalEnd = outStream.end;
+		outStream.end = function (chunk, enc, callback) {
+			if (chunk) {
+				this.write(chunk);
+			}
+			this.write({
 				_type_: 'end'
 			});
-			try {
-				// Most of the times it works, but when streaming big data, it crashes
-				callback();
-			} catch (err) {
-				console.error(err);
+			outStream.end = outStream.originalEnd;
+			outStream.end(null, enc, callback);
+		};
+
+		function transmitError(error, stream, socket) {
+			let packet = {
+				_type_: 'error'
+			};
+
+			if (error instanceof Error) {
+				packet._message_ = error.message;
+			} else {
+				packet._message_ = error;
 			}
-		});
+
+			stream.end(packet);
+			socket.end();
+		}
 
 		let errorHandler = domain.create();
 		errorHandler.once('error', function (err) {
 
 			// Inform the other side about the error and close the connection.
-			outStream.end({
-				_type_: 'error',
-				_message_: err.message
-			});
-
-			socket.end();
+			transmitError(err, outStream, socket);
 		});
 
 		socket.on('error', function () {
@@ -166,7 +176,7 @@ module.exports = function (localServiceName, options) {
 			this.end();
 		});
 
-		// Outstream encodes the data and pipe it to socket
+		// OutStream encodes the data and pipe it to socket
 		outStream.pipe(lengthPrefixedStream.encode()).pipe(socket);
 
 		socket.
@@ -176,12 +186,18 @@ module.exports = function (localServiceName, options) {
 				let method = methods[data.cmd];
 
 				if (method) {
-					// After parsing the header, remove this handler from processing
+					// After parsing the header, remove this handler from processing any more work
 					decode.unpipe(this);
 
 					// Catch sync and async errors
 					errorHandler.run(function () {
-						method(data.args, decode, outStream);
+						let maybePromise = method(data.args, decode, outStream);
+
+						if (maybePromise && maybePromise.catch) {
+							maybePromise.catch(function (err) {
+								transmitError(err, outStream, socket);
+							});
+						}
 					});
 
 					callback();
