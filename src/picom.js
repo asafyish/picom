@@ -7,7 +7,7 @@ let polo = new Polo({
 	heartbeat: 10 * 60 * 1000
 });
 let through2 = require('through2');
-let msgpack = require('msgpack');
+let msgpack = require('msgpack5')();
 let lengthPrefixedStream = require('length-prefixed-stream');
 
 function getNextService(remoteServiceName) {
@@ -27,17 +27,11 @@ function getNextService(remoteServiceName) {
 }
 
 function decodeStream() {
-	return through2.obj(function (chunk, enc, callback) {
-		this.push(msgpack.unpack(chunk));
-		callback();
-	});
+	return msgpack.decoder();
 }
 
-function encodeStream(flushFunction) {
-	return through2.obj(null, function (chunk, enc, callback) {
-		this.push(msgpack.pack(chunk));
-		callback();
-	}, flushFunction);
+function encodeStream() {
+	return msgpack.encoder();
 }
 
 // We are load balancing between same service type
