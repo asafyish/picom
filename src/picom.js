@@ -56,89 +56,88 @@ module.exports = function (localServiceName, options) {
 	options = options || {};
 
 	function stream(args, streamPayload) {
-		return new Promise(function (resolve, reject) {
 
-			if (!args.service) {
-				return reject('Service name is mandatory')
+		let str = pipe(lengthPrefixedStream.decode(), decodeStream(), through2.obj(function (data, enc, callback) {
+			if (data._type_ === 'error') {
+				callback(new Error(data._message_));
+			} else if (data._type_ === 'end') {
+
+				// Mark connection terminated correctly
+				this.isEndSeen = true;
+
+				// Close the connection, so the flush function will be called
+				this.end();
+				callback();
+			} else {
+
+				// Regular data, pipe it through
+				this.push(data);
+				callback();
+			}
+		}, function (callback) {
+			if (this.isEndSeen) {
+				return callback();
 			}
 
-			// Try round robin a service
-			getNextService(args.service).then(function (remoteService) {
-				if (!remoteService) {
+			callback(new Error('Connection dropped by other side'));
+		}));
 
-					return reject('The service " ' + args.service + '" is down');
+		// Try round robin a service
+		getNextService(args.service).then(function (remoteService) {
+			if (!remoteService) {
+				str.emit('error', new Error('The service "' + args.service + '" is down'));
+			}
+
+			let connection = net.connect({host: remoteService.Address, port: remoteService.ServicePort});
+			connection.once('error', function(err) {
+				str.emit(err);
+			});
+			connection.once('connect', function () {
+				// Create an out stream with all the necessary transformations
+				let outStream = encodeStream();
+				outStream.pipe(lengthPrefixedStream.encode()).pipe(this);
+
+				// Write the command type
+				outStream.write({
+					cmd: args.cmd,
+					args: args.args
+				});
+
+				// Pipe the payload
+				if (streamPayload && streamPayload.pipe) {
+					streamPayload.pipe(outStream);
 				}
 
-				let connection = net.connect({host: remoteService.Address, port: remoteService.ServicePort});
-				connection.once('error', reject);
-				connection.once('connect', function () {
-						// Create an out stream with all the necessary transformations
-						let outStream = encodeStream();
-						outStream.pipe(lengthPrefixedStream.encode()).pipe(this);
-
-						// Write the command type
-						outStream.write({
-							cmd: args.cmd,
-							args: args.args
-						});
-
-						// Pipe the payload
-						if (streamPayload && streamPayload.pipe) {
-							streamPayload.pipe(outStream);
-						}
-
-						resolve(this.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(through2.obj(function (data, enc, callback) {
-							if (data._type_ === 'error') {
-								callback(new Error(data._message_));
-							} else if (data._type_ === 'end') {
-
-								// Mark connection terminated correctly
-								this.isEndSeen = true;
-
-								// Close the connection, so the flush function will be called
-								this.end();
-								callback();
-							} else {
-
-								// Regular data, pipe it through
-								this.push(data);
-								callback();
-							}
-						}, function (callback) {
-							if (this.isEndSeen) {
-								return callback();
-							}
-
-							callback(new Error('Connection dropped by other side'));
-						})));
-					});
+				this.pipe(str);
 			});
 		});
+
+		return str;
 	}
 
 	function fetch(args, payload) {
 		return new Promise(function (resolve, reject) {
-			stream(args, payload).
-				then(function (stream) {
-					let response = [];
-
-					stream.pipe(through2.obj(function (chunk, enc, callback) {
-						response.push(chunk);
-						callback();
-					}, function (callback) {
-						if (args.multiple) {
-							resolve(response);
-						} else {
-							if (response.length > 0) {
-								resolve(response[0]);
-							} else {
-								resolve();
-							}
-						}
-						callback();
-					}));
-				}).
-				catch(reject);
+			let response = [];
+			let s = stream(args, payload);
+			s.pipe(through2.obj(function (chunk, enc, callback) {
+				response.push(chunk);
+				callback();
+			}, function (callback) {
+				if (args.multiple) {
+					resolve(response);
+				} else {
+					if (response.length > 0) {
+						resolve(response[0]);
+					} else {
+						resolve();
+					}
+				}
+				callback();
+			}));
+			s.once('error', function (err) {
+				reject(err);
+				//this.end();
+			});
 		});
 	}
 
@@ -255,7 +254,7 @@ module.exports = function (localServiceName, options) {
 			});
 
 			process.on('exit', function () {
-				consul.agent.service.deregister(port, function () {
+				consul.agent.service.deregister({id: '' + port}, function () {
 					console.error('Finished deregister')
 				});
 				console.error('Deregister service');
