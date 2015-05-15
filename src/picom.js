@@ -1,29 +1,44 @@
 'use strict';
 
-let net = require('net');
-let domain = require('domain');
-let Polo = require('polo');
-let polo = new Polo({
-	heartbeat: 10 * 60 * 1000
-});
-let through2 = require('through2');
-let msgpack = require('msgpack5')();
-let lengthPrefixedStream = require('length-prefixed-stream');
+const net = require('net');
+const domain = require('domain');
+const consul = require('consul')();
+const through2 = require('through2');
+const msgpack = require('msgpack5')();
+const lengthPrefixedStream = require('length-prefixed-stream');
+const pipe = require('multipipe');
+
+let roundRobin = {};
+let isStarted = false;
 
 function getNextService(remoteServiceName) {
-	let allServices = polo.all();
-
-	if (allServices && allServices[remoteServiceName]) {
-		if (allServices[remoteServiceName].hasOwnProperty('index')) {
-			if (allServices[remoteServiceName].index >= allServices[remoteServiceName].length) {
-				allServices[remoteServiceName].index = 0;
+	return new Promise(function (resolve, reject) {
+		consul.catalog.service.nodes(remoteServiceName, function (err, services) {
+			if (err) {
+				return reject(err);
 			}
-			return allServices[remoteServiceName][allServices[remoteServiceName].index++];
-		} else {
-			allServices[remoteServiceName].index = 0;
-			return getNextService((remoteServiceName));
-		}
-	}
+
+			// Empty services found is a valid state
+			if (services.length === 0) {
+				return resolve();
+			}
+
+			// TODO This can explode with services... maybe not a problem because even hundreds of services
+			// is relatively small memory footprint
+			// Store a round-robin index for each service
+			if (!roundRobin[remoteServiceName]) {
+				roundRobin[remoteServiceName] = 0;
+			}
+
+			// If round-robin index is out of bounds
+			if (services.length <= roundRobin[remoteServiceName]) {
+				roundRobin[remoteServiceName] = 0;
+			}
+
+			// Return the service and increment the round-robin index
+			resolve(services[roundRobin[remoteServiceName]++]);
+		});
+	});
 }
 
 function decodeStream() {
@@ -41,80 +56,89 @@ module.exports = function (localServiceName, options) {
 	options = options || {};
 
 	function stream(args, streamPayload) {
+		return new Promise(function (resolve, reject) {
 
-		// Try round robin a service
-		let remoteService = getNextService(args.service);
-		if (!remoteService) {
-			throw new Error('Invalid service name "' + args.service + '" or service is down.');
-		}
+			if (!args.service) {
+				return reject('Service name is mandatory')
+			}
 
-		let socket = net.connect(remoteService,
-			function () {
-				// Create an out stream with all the necessary transformations
-				let outStream = encodeStream();
-				outStream.pipe(lengthPrefixedStream.encode()).pipe(this);
+			// Try round robin a service
+			getNextService(args.service).then(function (remoteService) {
+				if (!remoteService) {
 
-				// Write the command type
-				outStream.write({
-					cmd: args.cmd,
-					args: args.args
-				});
-
-				// Pipe the payload
-				if (streamPayload && streamPayload.pipe) {
-					streamPayload.pipe(outStream);
+					return reject('The service " ' + args.service + '" is down');
 				}
+
+				let connection = net.connect({host: remoteService.Address, port: remoteService.ServicePort});
+				connection.once('error', reject);
+				connection.once('connect', function () {
+						// Create an out stream with all the necessary transformations
+						let outStream = encodeStream();
+						outStream.pipe(lengthPrefixedStream.encode()).pipe(this);
+
+						// Write the command type
+						outStream.write({
+							cmd: args.cmd,
+							args: args.args
+						});
+
+						// Pipe the payload
+						if (streamPayload && streamPayload.pipe) {
+							streamPayload.pipe(outStream);
+						}
+
+						resolve(this.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(through2.obj(function (data, enc, callback) {
+							if (data._type_ === 'error') {
+								callback(new Error(data._message_));
+							} else if (data._type_ === 'end') {
+
+								// Mark connection terminated correctly
+								this.isEndSeen = true;
+
+								// Close the connection, so the flush function will be called
+								this.end();
+								callback();
+							} else {
+
+								// Regular data, pipe it through
+								this.push(data);
+								callback();
+							}
+						}, function (callback) {
+							if (this.isEndSeen) {
+								return callback();
+							}
+
+							callback(new Error('Connection dropped by other side'));
+						})));
+					});
 			});
-
-		return socket.pipe(lengthPrefixedStream.decode()).pipe(decodeStream()).pipe(through2.obj(function (data, enc, callback) {
-			if (data._type_ === 'error') {
-				callback(new Error(data._message_));
-			} else if (data._type_ === 'end') {
-
-				// Mark connection terminated correctly
-				this.isEndSeen = true;
-
-				// Close the connection, so the flush function will be called
-				this.end();
-				callback();
-			} else {
-
-				// Regular data, pipe it through
-				this.push(data);
-				callback();
-			}
-		}, function (callback) {
-			if (this.isEndSeen) {
-				return callback();
-			}
-
-			callback(new Error('Connection dropped by other side'));
-		}));
+		});
 	}
 
 	function fetch(args, payload) {
 		return new Promise(function (resolve, reject) {
-			let response = [];
-			let s = stream(args, payload);
-			s.pipe(through2.obj(function (chunk, enc, callback) {
-				response.push(chunk);
-				callback();
-			}, function (callback) {
-				if (args.multiple) {
-					resolve(response);
-				} else {
-					if (response.length > 0) {
-						resolve(response[0]);
-					} else {
-						resolve();
-					}
-				}
-				callback();
-			}));
-			s.once('error', function (err) {
-				reject(err);
-				//this.end();
-			});
+			stream(args, payload).
+				then(function (stream) {
+					let response = [];
+
+					stream.pipe(through2.obj(function (chunk, enc, callback) {
+						response.push(chunk);
+						callback();
+					}, function (callback) {
+						if (args.multiple) {
+							resolve(response);
+						} else {
+							if (response.length > 0) {
+								resolve(response[0]);
+							} else {
+								resolve();
+							}
+						}
+						callback();
+					}));
+				}).
+				catch(reject);
 		});
 	}
 
@@ -222,15 +246,19 @@ module.exports = function (localServiceName, options) {
 	});
 
 	function start() {
-		portPromise.then(function (value) {
+		portPromise.then(function (port) {
 			// Publish the service type and random port
-			polo.put({
-				name: localServiceName,
-				port: value
+			consul.agent.service.register({id: '' + port, name: localServiceName, port: port}, function (err) {
+				if (err) {
+					throw err;
+				}
 			});
 
 			process.on('exit', function () {
-				polo.stop();
+				consul.agent.service.deregister(port, function () {
+					console.error('Finished deregister')
+				});
+				console.error('Deregister service');
 			});
 		});
 	}

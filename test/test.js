@@ -41,7 +41,7 @@ describe('picom', function () {
 				}
 				else {
 					console.log('chunk');
-					setTimeout(function() {
+					setTimeout(function () {
 						next();
 					}, 1000);
 				}
@@ -58,7 +58,7 @@ describe('picom', function () {
 			inStream.pipe(outStream);
 		});
 
-		service1.expose('streamEchoMultiply', function(args, inStream, outStream) {
+		service1.expose('streamEchoMultiply', function (args, inStream, outStream) {
 			let arr = [];
 			let size = parseInt(args.size * args.multiply);
 
@@ -69,7 +69,7 @@ describe('picom', function () {
 			let payload = _(arr);
 
 			// Drain inStream
-			inStream.pipe(through.obj(function(chunk, enc, callback) {
+			inStream.pipe(through.obj(function (chunk, enc, callback) {
 				callback();
 			}));
 			payload.pipe(outStream);
@@ -79,7 +79,7 @@ describe('picom', function () {
 		});
 
 		service1.expose('async-fail', Promise.coroutine(function*(args, inStream, outStream) {
-			setTimeout(function() {
+			setTimeout(function () {
 				throw new Error(REQUEST_ERROR);
 			}, 1000);
 		}));
@@ -112,8 +112,8 @@ describe('picom', function () {
 		}));
 
 		service1.expose('promise-reject', Promise.coroutine(function*(args, inStream, outStream) {
-			return new Promise(function(resolve, reject) {
-				setTimeout(function() {
+			return new Promise(function (resolve, reject) {
+				setTimeout(function () {
 					reject(new Error(REQUEST_ERROR));
 				}, 500);
 			});
@@ -168,16 +168,20 @@ describe('picom', function () {
 				service: 'service1',
 				cmd: 'add',
 				args: args
-			}).pipe(through.obj(function (chunk, enc, callback) {
-				//outStream.end(response * args.c);
-				callback(null, chunk * args.c);
-			})).pipe(outStream);
+			}).then(function(stream) {
+				stream.pipe(through.obj(function (chunk, enc, callback) {
+					//outStream.end(response * args.c);
+					callback(null, chunk * args.c);
+				})).pipe(outStream);
+			});
 		});
 		service2.expose('method2-service2', function (args, inStream, outStream) {
 			service2.stream({
 				service: 'service1',
 				cmd: 'method1-service1'
-			}, inStream).pipe(outStream);
+			}, inStream).then(function(stream) {
+				stream.pipe(outStream);
+			});
 		});
 		service2.expose('throws', function () {
 			throw new Error(REQUEST_ERROR);
@@ -190,7 +194,9 @@ describe('picom', function () {
 				args: {
 					hello: 123
 				}
-			}, inStream).pipe(outStream);
+			}, inStream).then(function(stream) {
+				stream.pipe(outStream);
+			});
 		});
 
 		service3.expose('responder2', function (args, inStream, outStream) {
@@ -220,11 +226,13 @@ describe('picom', function () {
 			service2.stream({
 				service: 'service1',
 				cmd: 'method1-service1'
-			}).pipe(through.obj(function (response, enc, callback) {
-				expect(response).to.equal('method1-service1-reply');
-				done();
-				callback();
-			}));
+			}).then(function (stream) {
+				stream.pipe(through.obj(function (response, enc, callback) {
+					expect(response).to.equal('method1-service1-reply');
+					done();
+					callback();
+				}));
+			});
 		});
 
 		it('should call add and get a reply', function (done) {
@@ -232,11 +240,13 @@ describe('picom', function () {
 				service: 'service1',
 				cmd: 'add',
 				args: {a: 2, b: 3}
-			}).pipe(through.obj(function (chunk, enc, callback) {
-				expect(chunk).to.equal(5);
-				done();
-				callback();
-			}));
+			}).then(function (stream) {
+				stream.pipe(through.obj(function (chunk, enc, callback) {
+					expect(chunk).to.equal(5);
+					done();
+					callback();
+				}));
+			});
 		});
 
 		it('should call add-and-multiple which calls other service and get a reply', function (done) {
@@ -244,22 +254,26 @@ describe('picom', function () {
 				service: 'service2',
 				cmd: 'add-and-multiple',
 				args: {a: 2, b: 3, c: 10}
-			}).pipe(through.obj(function (chunk, enc, callback) {
-				expect(chunk).to.equal(50);
-				done();
-				callback();
-			}));
+			}).then(function (stream) {
+				stream.pipe(through.obj(function (chunk, enc, callback) {
+					expect(chunk).to.equal(50);
+					done();
+					callback();
+				}));
+			});
 		});
 
 		it('should call service 2 from service 3', function (done) {
 			service3.stream({
 				service: 'service2',
 				cmd: 'method1-service2'
-			}).pipe(through.obj(function (response, enc, callback) {
-				expect(response).to.equal('method1-service2-reply');
-				done();
-				callback();
-			}));
+			}).then(function (stream) {
+				stream.pipe(through.obj(function (response, enc, callback) {
+					expect(response).to.equal('method1-service2-reply');
+					done();
+					callback();
+				}));
+			});
 		});
 
 		it('should call service 2 from service 3 using promise api', function (done) {
@@ -276,7 +290,7 @@ describe('picom', function () {
 			service3.fetch({
 				service: 'service2',
 				cmd: 'throws'
-			}).then(function(response) {
+			}).then(function (response) {
 
 				// This is an error
 				done(response);
@@ -300,11 +314,13 @@ describe('picom', function () {
 			service3.stream({
 				service: 'service2',
 				cmd: 'method2-service2'
-			}).pipe(through.obj(function (response, enc, callback) {
-				expect(response).to.equal('method1-service1-reply');
-				done();
-				callback();
-			}));
+			}).then(function (stream) {
+				stream.pipe(through.obj(function (response, enc, callback) {
+					expect(response).to.equal('method1-service1-reply');
+					done();
+					callback();
+				}));
+			});
 		});
 
 		it('should call service with a stream payload', function (done) {
@@ -315,14 +331,16 @@ describe('picom', function () {
 			service3.stream({
 				service: 'service1',
 				cmd: 'streamEcho'
-			}, payload).pipe(through.obj(function (chunk, enc, callback) {
-				response.push(chunk);
-				callback();
-			}, function (callback) {
-				expect(response).to.deep.equal(arr);
-				done();
-				callback();
-			}));
+			}, payload).then(function (stream) {
+				stream.pipe(through.obj(function (chunk, enc, callback) {
+					response.push(chunk);
+					callback();
+				}, function (callback) {
+					expect(response).to.deep.equal(arr);
+					done();
+					callback();
+				}));
+			});
 		});
 
 		it.skip('should call service with a file stream', function (done) {
@@ -332,11 +350,13 @@ describe('picom', function () {
 			service3.stream({
 				service: 'service1',
 				cmd: 'streamEcho'
-			}, payload).pipe(through.obj(function (response, enc, callback) {
-				expect(response).to.deep.equal(content);
-				done();
-				callback();
-			}));
+			}, payload).then(function(stream){
+				stream.pipe(through.obj(function (response, enc, callback) {
+					expect(response).to.deep.equal(content);
+					done();
+					callback();
+				}));
+			});
 		});
 
 		it('should stream a stream through 2 services and get a reply', function (done) {
@@ -347,14 +367,16 @@ describe('picom', function () {
 			service3.stream({
 				service: 'service2',
 				cmd: 'streamEchoNext'
-			}, payload).pipe(through.obj(function (chunk, enc, callback) {
-				response.push(chunk);
-				callback();
-			}, function (callback) {
-				expect(response).to.deep.equal(arr);
-				done();
-				callback();
-			}));
+			}, payload).then(function(stream) {
+				stream.pipe(through.obj(function (chunk, enc, callback) {
+					response.push(chunk);
+					callback();
+				}, function (callback) {
+					expect(response).to.deep.equal(arr);
+					done();
+					callback();
+				}));
+			});
 		});
 
 		it('should stream a stream through 2 services and get an empty reply', function (done) {
@@ -430,7 +452,7 @@ describe('picom', function () {
 				if (index >= SIZE) {
 					return push(null, _.nil);
 				}
-				setTimeout(function() {
+				setTimeout(function () {
 					push(null, index++);
 					next();
 				}, 0);
@@ -489,11 +511,21 @@ describe('picom', function () {
 			let size = 100000;
 
 			for (let i = 0; i <= size; i++) {
-				arr.push({index: i, dmdsjksjkdjfefjkef: 'akkejkjkrjekjr', kjekjkrjekrjke: 23984934, kekfjkejjtjt: 'mmakkucudhneje749'});
+				arr.push({
+					index: i,
+					dmdsjksjkdjfefjkef: 'akkejkjkrjekjr',
+					kjekjkrjekrjke: 23984934,
+					kekfjkejjtjt: 'mmakkucudhneje749'
+				});
 			}
 
 			for (let i = 0; i <= size * multiply; i++) {
-				expectedResponse.push({index: i, irjdjem4fk: 'akkejkjkrjekjr', almfjtl4: 23984934, kfkenrk5: 'mmakkucudhneje749'});
+				expectedResponse.push({
+					index: i,
+					irjdjem4fk: 'akkejkjkrjekjr',
+					almfjtl4: 23984934,
+					kfkenrk5: 'mmakkucudhneje749'
+				});
 			}
 
 			let payload = _(arr);
@@ -504,14 +536,16 @@ describe('picom', function () {
 					size: size,
 					multiply: multiply
 				}
-			}, payload).pipe(through.obj(function (chunk, enc, callback) {
-				response.push(chunk);
-				callback();
-			}, function (callback) {
-				expect(response).to.deep.equal(expectedResponse);
-				done();
-				callback();
-			}));
+			}, payload).then(function(stream) {
+				stream.pipe(through.obj(function (chunk, enc, callback) {
+					response.push(chunk);
+					callback();
+				}, function (callback) {
+					expect(response).to.deep.equal(expectedResponse);
+					done();
+					callback();
+				}));
+			});
 		});
 
 		it('should stream a large chunk, and receive even larger one', function (done) {
@@ -527,7 +561,12 @@ describe('picom', function () {
 			}
 
 			for (let i = 0; i <= size * multiply; i++) {
-				expectedResponse.push({index: i, irjdjem4fk: 'akkejkjkrjekjr', almfjtl4: 23984934, kfkenrk5: 'mmakkucudhneje749'});
+				expectedResponse.push({
+					index: i,
+					irjdjem4fk: 'akkejkjkrjekjr',
+					almfjtl4: 23984934,
+					kfkenrk5: 'mmakkucudhneje749'
+				});
 			}
 
 			let payload = _(arr);
@@ -538,14 +577,16 @@ describe('picom', function () {
 					size: size,
 					multiply: multiply
 				}
-			}, payload).pipe(through.obj(function (chunk, enc, callback) {
-				response.push(chunk);
-				callback();
-			}, function (callback) {
-				expect(response).to.deep.equal(expectedResponse);
-				done();
-				callback();
-			}));
+			}, payload).then(function(stream) {
+				stram.pipe(through.obj(function (chunk, enc, callback) {
+					response.push(chunk);
+					callback();
+				}, function (callback) {
+					expect(response).to.deep.equal(expectedResponse);
+					done();
+					callback();
+				}));
+			});
 		});
 
 		it.skip('should call with a large stream as payload', function (done) {
@@ -553,7 +594,12 @@ describe('picom', function () {
 			let response = [];
 
 			for (let i = 0; i < 100000; i++) {
-				arr.push({index: i, dmdsjksjkdjfefjkef: 'akkejkjkrjekjr', kjekjkrjekrjke: 23984934, kekfjkejjtjt: 'mmakkucudhneje749'});
+				arr.push({
+					index: i,
+					dmdsjksjkdjfefjkef: 'akkejkjkrjekjr',
+					kjekjkrjekrjke: 23984934,
+					kekfjkejjtjt: 'mmakkucudhneje749'
+				});
 			}
 
 			let payload = _(arr);
