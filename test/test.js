@@ -13,205 +13,201 @@ var Picom = require('../');
 describe('picom', function () {
 	var service1 = new Picom('service1');
 	var service2 = new Picom('service2');
-	var service3 = new Picom('service3', {autoStart: true});
+	var service3 = new Picom('service3');
 	var roundRobinA = new Picom('round');
 	var roundRobinB = new Picom('round');
 	var REQUEST_ERROR = 'Function throws an error over the wire';
 
 	before(function () {
-		service1.expose('method1-service1', function (args, inStream, outStream) {
-			outStream.end('method1-service1-reply');
-		});
-		service1.expose('wait', function (args, inStream, outStream) {
-			setTimeout(function () {
-				outStream.end('done');
-			}, args.timeout);
-		});
-
-		service1.expose('ignore', function (args, inStream, outStream) {
-			_(inStream).batch(5000).consume(function (err, x, push, next) {
-				if (err) {
-					push(err);
-					next();
-				}
-				else if (x === _.nil) {
-					// pass nil (end event) along the stream
-					push(null, x);
-					outStream.end();
-				}
-				else {
-					console.log('chunk');
-					setTimeout(function () {
-						next();
-					}, 1000);
-				}
-			}).resume();
-		});
-		service1.expose('add', function (args, inStream, outStream) {
-			outStream.end(args.a + args.b);
-		});
-		service1.expose('echo', function (args, inStream, outStream) {
-			outStream.end(args.text);
-		});
-
-		service1.expose('streamEcho', function (args, inStream, outStream) {
-			inStream.pipe(outStream);
-		});
-
-		service1.expose('streamEchoMultiply', function (args, inStream, outStream) {
-			let arr = [];
-			let size = parseInt(args.size * args.multiply);
-
-			for (let i = 0; i <= size; i++) {
-				arr.push({index: i, irjdjem4fk: 'akkejkjkrjekjr', almfjtl4: 23984934, kfkenrk5: 'mmakkucudhneje749'});
-			}
-
-			let payload = _(arr);
-
-			// Drain inStream
-			inStream.pipe(through.obj(function (chunk, enc, callback) {
-				callback();
-			}));
-			payload.pipe(outStream);
-		});
-		service1.expose('never-reply', function () {
-			// Empty on purpose
-		});
-
-		service1.expose('async-fail', Promise.coroutine(function*(args, inStream, outStream) {
-			setTimeout(function () {
-				throw new Error(REQUEST_ERROR);
-			}, 1000);
-		}));
-
-		service1.expose('promise-yield-fetch', Promise.coroutine(function*(args, inStream, outStream) {
-			let response = yield service2.fetch({
-				service: 'service1',
-				cmd: 'streamEcho',
-				multiple: true
-			}, inStream);
-
-			outStream.end(response);
-		}));
-		service1.expose('promise-stream', Promise.coroutine(function*(args, inStream, outStream) {
-			service1.stream({
-				service: 'service1',
-				cmd: 'streamEcho'
-			}, inStream).pipe(through.obj(function (chunk, enc, callback) {
-				callback(null, chunk);
-			})).pipe(outStream);
-		}));
-		service1.expose('promise', Promise.coroutine(function*(args, inStream, outStream) {
-			service1.fetch({
-				service: 'service1',
-				cmd: 'streamEcho',
-				multiple: true
-			}, inStream).then(function (response) {
-				outStream.end(response);
-			});
-		}));
-
-		service1.expose('promise-reject', Promise.coroutine(function*(args, inStream, outStream) {
-			return new Promise(function (resolve, reject) {
+		service1.expose({
+			'method1-service1': function (args, inStream, outStream) {
+				outStream.end('method1-service1-reply');
+			},
+			'wait': function (args, inStream, outStream) {
 				setTimeout(function () {
-					reject(new Error(REQUEST_ERROR));
-				}, 500);
-			});
-		}));
+					outStream.end('done');
+				}, args.timeout);
+			},
+			'ignore': function (args, inStream, outStream) {
+				_(inStream).batch(5000).consume(function (err, x, push, next) {
+					if (err) {
+						push(err);
+						next();
+					}
+					else if (x === _.nil) {
+						// pass nil (end event) along the stream
+						push(null, x);
+						outStream.end();
+					}
+					else {
+						console.log('chunk');
+						setTimeout(function () {
+							next();
+						}, 1000);
+					}
+				}).resume();
+			},
+			'add': function (args, inStream, outStream) {
+				outStream.end(args.a + args.b);
+			},
+			'echo': function (args, inStream, outStream) {
+				outStream.end(args.text);
+			},
+			'streamEcho': function (args, inStream, outStream) {
+				inStream.pipe(outStream);
+			},
+			'streamEchoMultiply': function (args, inStream, outStream) {
+				let arr = [];
+				let size = parseInt(args.size * args.multiply);
 
-		service2.expose('method1-service2', function (args, inStream, outStream) {
-			outStream.end('method1-service2-reply');
-		});
-		service2.expose('streamEchoNext', function (args, inStream, outStream) {
-			service2.stream({
-				service: 'service1',
-				cmd: 'streamEcho',
-				args: args
-			}, inStream).pipe(outStream);
-		});
-		service2.expose('fetchEchoNext', function (args, inStream, outStream) {
-			inStream = _(inStream);
-			let fork1 = inStream.fork();
-			let fork2 = inStream.fork();
+				for (let i = 0; i <= size; i++) {
+					arr.push({index: i, irjdjem4fk: 'akkejkjkrjekjr', almfjtl4: 23984934, kfkenrk5: 'mmakkucudhneje749'});
+				}
 
-			service2.fetch({
-				service: 'service1',
-				cmd: 'streamEcho',
-				multiple: true,
-				args: args
-			}, fork1).then(function (response) {
+				let payload = _(arr);
+
+				// Drain inStream
+				inStream.pipe(through.obj(function (chunk, enc, callback) {
+					callback();
+				}));
+				payload.pipe(outStream);
+			},
+			'never-reply': function () {
+				// Empty on purpose
+			},
+			'async-fail': Promise.coroutine(function*(args, inStream, outStream) {
+				setTimeout(function () {
+					throw new Error(REQUEST_ERROR);
+				}, 1000);
+			}),
+			'promise-yield-fetch': Promise.coroutine(function*(args, inStream, outStream) {
+				let response = yield service2.fetch({
+					service: 'service1',
+					cmd: 'streamEcho',
+					multiple: true
+				}, inStream);
+
+				outStream.end(response);
+			}),
+			'promise-stream': Promise.coroutine(function*(args, inStream, outStream) {
+				service1.stream({
+					service: 'service1',
+					cmd: 'streamEcho'
+				}, inStream).pipe(through.obj(function (chunk, enc, callback) {
+					callback(null, chunk);
+				})).pipe(outStream);
+			}),
+			'promise': Promise.coroutine(function*(args, inStream, outStream) {
+				service1.fetch({
+					service: 'service1',
+					cmd: 'streamEcho',
+					multiple: true
+				}, inStream).then(function (response) {
+					outStream.end(response);
+				});
+			}),
+			'promise-reject': Promise.coroutine(function*(args, inStream, outStream) {
+				return new Promise(function (resolve, reject) {
+					setTimeout(function () {
+						reject(new Error(REQUEST_ERROR));
+					}, 500);
+				});
+			})
+		});
+
+		service2.expose({
+			'method1-service2': function (args, inStream, outStream) {
+				outStream.end('method1-service2-reply');
+			},
+			'streamEchoNext': function (args, inStream, outStream) {
+				service2.stream({
+					service: 'service1',
+					cmd: 'streamEcho',
+					args: args
+				}, inStream).pipe(outStream);
+			},
+			'fetchEchoNext': function (args, inStream, outStream) {
+				inStream = _(inStream);
+				let fork1 = inStream.fork();
+				let fork2 = inStream.fork();
+
 				service2.fetch({
 					service: 'service1',
 					cmd: 'streamEcho',
 					multiple: true,
 					args: args
-				}, fork2).then(function (data) {
-					outStream.end(data);
+				}, fork1).then(function (response) {
+					service2.fetch({
+						service: 'service1',
+						cmd: 'streamEcho',
+						multiple: true,
+						args: args
+					}, fork2).then(function (data) {
+						outStream.end(data);
+					});
 				});
-			});
 
-			inStream.resume();
-		});
-
-		service2.expose('emptyResponse', function (args, inStream, outStream) {
-			service2.fetch({
-				service: 'service1',
-				cmd: 'streamEcho',
-				args: args
-			}, inStream).then(function (data) {
-				outStream.end();
-			});
-		});
-
-		service2.expose('add-and-multiple', function (args, inStream, outStream) {
-			service2.stream({
-				service: 'service1',
-				cmd: 'add',
-				args: args
-			}).pipe(through.obj(function (chunk, enc, callback) {
-				//outStream.end(response * args.c);
-				callback(null, chunk * args.c);
-			})).pipe(outStream);
-		});
-		service2.expose('method2-service2', function (args, inStream, outStream) {
-			service2.stream({
-				service: 'service1',
-				cmd: 'method1-service1'
-			}, inStream).pipe(outStream);
-		});
-		service2.expose('throws', function () {
-			throw new Error(REQUEST_ERROR);
-		});
-
-		service2.expose('responder1', function (args, inStream, outStream) {
-			service2.stream({
-				service: 'service3',
-				cmd: 'responder2',
-				args: {
-					hello: 123
-				}
-			}, inStream).pipe(outStream);
+				inStream.resume();
+			},
+			'emptyResponse': function (args, inStream, outStream) {
+				service2.fetch({
+					service: 'service1',
+					cmd: 'streamEcho',
+					args: args
+				}, inStream).then(function (data) {
+					outStream.end();
+				});
+			},
+			'add-and-multiple': function (args, inStream, outStream) {
+				service2.stream({
+					service: 'service1',
+					cmd: 'add',
+					args: args
+				}).pipe(through.obj(function (chunk, enc, callback) {
+					//outStream.end(response * args.c);
+					callback(null, chunk * args.c);
+				})).pipe(outStream);
+			},
+			'method2-service2': function (args, inStream, outStream) {
+				service2.stream({
+					service: 'service1',
+					cmd: 'method1-service1'
+				}, inStream).pipe(outStream);
+			},
+			'throws': function () {
+				throw new Error(REQUEST_ERROR);
+			},
+			'responder1': function (args, inStream, outStream) {
+				service2.stream({
+					service: 'service3',
+					cmd: 'responder2',
+					args: {
+						hello: 123
+					}
+				}, inStream).pipe(outStream);
+			}
 		});
 
-		service3.expose('responder2', function (args, inStream, outStream) {
-			inStream.pipe(through.obj(null, function (chunk, enc, callback) {
-				callback(null, chunk);
-			}, function (callback) {
-				callback();
-			})).pipe(outStream);
+		service3.expose({
+			'responder2': function (args, inStream, outStream) {
+				inStream.pipe(through.obj(null, function (chunk, enc, callback) {
+					callback(null, chunk);
+				}, function (callback) {
+					callback();
+				})).pipe(outStream);
+			}
 		});
-		roundRobinA.expose('name', function (args, inStream, outStream) {
-			outStream.end('round robin A');
+		roundRobinA.expose({
+			'name': function (args, inStream, outStream) {
+				outStream.end('round robin A');
+			}
 		});
 
-		roundRobinB.expose('name', function (args, inStream, outStream) {
-			outStream.end('round robin B');
+		roundRobinB.expose({
+			'name': function (args, inStream, outStream) {
+				outStream.end('round robin B');
+			}
 		});
-
-		service1.start();
-		service2.start();
-		roundRobinA.start();
-		roundRobinB.start();
 	});
 
 	describe('messaging', function () {
@@ -842,4 +838,5 @@ describe('picom', function () {
 			});
 		});
 	});
-});
+})
+;
