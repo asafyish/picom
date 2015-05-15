@@ -22,7 +22,6 @@ function getNextService(remoteServiceName) {
 				return resolve();
 			}
 
-			// TODO This can explode with services... maybe not a problem because even hundreds of services
 			// is relatively small memory footprint
 			// Store a round-robin index for each service
 			if (!roundRobin[remoteServiceName]) {
@@ -41,20 +40,24 @@ function getNextService(remoteServiceName) {
 }
 
 function decodeStream() {
-	return msgpack.decoder();
+	return pipe(lengthPrefixedStream.decode(), msgpack.decoder());
 }
 
 function encodeStream() {
-	return msgpack.encoder();
+	return pipe(msgpack.encoder(), lengthPrefixedStream.encode());
 }
 
-let Picom = function (serviceName) {
+let Picom = function (serviceName, options) {
 	this.serviceName = serviceName;
 	this.isStarted = false;
+	this.methods = {};
+	this.options = {
+		ttl: options ? options.ttl || 30 : 30
+	}
 };
 
 Picom.prototype.stream = function (args, streamPayload) {
-	let pipedStream = pipe(lengthPrefixedStream.decode(), decodeStream(), through2.obj(function (data, enc, callback) {
+	let pipedStream = pipe(decodeStream(), through2.obj(function (data, enc, callback) {
 		if (data._type_ === 'error') {
 			callback(new Error(data._message_));
 		} else if (data._type_ === 'end') {
@@ -92,7 +95,7 @@ Picom.prototype.stream = function (args, streamPayload) {
 		connection.once('connect', function () {
 			// Create an out stream with all the necessary transformations
 			let outStream = encodeStream();
-			outStream.pipe(lengthPrefixedStream.encode()).pipe(this);
+			outStream.pipe(this);
 
 			// Write the command type
 			outStream.write({
@@ -155,17 +158,35 @@ Picom.prototype.expose = function (methods) {
 			throw err;
 		}
 		let address = server.address();
-		consul.agent.service.register({id: '' + address.port, name: self.serviceName, port: address.port}, function (err) {
+		let serviceId = self.serviceName + '-' + address.port;
+		let checkId = 'check:' + serviceId;
+
+		// Register the service to consul
+		consul.agent.service.register({id: serviceId, name: self.serviceName, port: address.port}, function (err) {
 			if (err) {
 				throw err;
 			}
 
-			self.methods = methods;
-		});
+			// Register a check
+			consul.agent.check.register({name: 'check:' + serviceId, id: checkId, serviceid: serviceId, ttl: self.options.ttl + 's'}, function(err) {
+				if (err) {
+					throw err;
+				}
 
-		process.on('beforeExit', function () {
-			consul.agent.service.deregister({id: '' + address.port}, function () {
+				// Immediately after registering a check - pass it
+				consul.agent.check.pass({id: checkId}, function(err) {
+					if (err) throw err;
+				});
+
+				// Every 80% of ttl, pass the check
+				setTimeout(function() {
+					consul.agent.check.pass({id: checkId}, function(err) {
+						if (err) throw err;
+					});
+				}, parseInt(self.options.ttl * 0.8) * 1000).unref();
 			});
+
+			self.methods = methods;
 		});
 	});
 };
@@ -219,10 +240,9 @@ Picom.prototype.onConnection = function (socket) {
 	});
 
 	// OutStream encodes the data and pipe it to socket
-	outStream.pipe(lengthPrefixedStream.encode()).pipe(socket);
+	outStream.pipe(socket);
 
 	socket.
-		pipe(lengthPrefixedStream.decode()).
 		pipe(decode).
 		pipe(through2.obj(function (data, enc, callback) {
 			let method = self.methods[data.cmd];
