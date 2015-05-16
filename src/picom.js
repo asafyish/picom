@@ -31,7 +31,7 @@ let Picom = function (serviceName, options) {
 	this.consul = new Consul({
 		host: options.consulHost || '127.0.0.1',
 		port: options.consulPort || 8500
-	})
+	});
 };
 
 Picom.prototype.stream = function (args, streamPayload) {
@@ -128,20 +128,20 @@ Picom.prototype.expose = function (methods) {
 	let self = this;
 	let server = net.createServer({allowHalfOpen: true}, this.onConnection.bind(this));
 
-	this.server = server.listen(function (err) {
+	this.server = server.listen(function (listenError) {
 
 		// TODO Check if err works
-		if (err) {
-			throw err;
+		if (listenError) {
+			throw listenError;
 		}
 		let address = server.address();
 		let serviceId = self.serviceName + '-' + address.port;
 		let checkId = 'check:' + serviceId;
 
 		// Register the service to consul
-		self.consul.agent.service.register({id: serviceId, name: self.serviceName, port: address.port}, function (err) {
-			if (err) {
-				throw err;
+		self.consul.agent.service.register({id: serviceId, name: self.serviceName, port: address.port}, function (registerError) {
+			if (registerError) {
+				throw registerError;
 			}
 
 			// Register a check
@@ -150,20 +150,19 @@ Picom.prototype.expose = function (methods) {
 				id: checkId,
 				serviceid: serviceId,
 				ttl: self.options.ttl + 's'
-			}, function (err) {
-				if (err) {
-					throw err;
+			}, function (checkError) {
+				if (checkError) {
+					throw checkError;
 				}
 
 				// Immediately after registering a check - pass it
-				self.consul.agent.check.pass({id: checkId}, function (err) {
-					if (err) throw err;
+				self.consul.agent.check.pass({id: checkId}, function () {
+					// Ignore error
 				});
 
 				// Every 80% of ttl, pass the check
 				setTimeout(function () {
-					self.consul.agent.check.pass({id: checkId}, function (err) {
-						if (err) throw err;
+					self.consul.agent.check.pass({id: checkId}, function () {
 					});
 				}, parseInt(self.options.ttl * 0.8) * 1000).unref();
 			});
@@ -215,7 +214,6 @@ Picom.prototype.onConnection = function (socket) {
 	});
 
 	socket.on('error', function () {
-		console.error('socket error');
 
 		// In case of error, we need to manually close the socket
 		this.end();

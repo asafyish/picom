@@ -40,7 +40,6 @@ describe('picom', function () {
 						outStream.end();
 					}
 					else {
-						console.log('chunk');
 						setTimeout(function () {
 							next();
 						}, 1000);
@@ -733,17 +732,18 @@ describe('picom', function () {
 			}).on('error', function (err) {
 				expect(err.message).to.equal('service2:not-real Does not exist');
 				done();
-			})
+			});
 		});
 
 		it('should throw on call to invalid service', function (done) {
 			service3.stream({
 				service: 'service5',
 				cmd: 'not-real'
-			}).once('error', function (err) {
-				done();
-			})
+			}).once('error', function () {
 
+				// If we got here, it means we cought the error, which is good
+				done();
+			});
 		});
 
 		it('should get a failed response from async service', function (done) {
@@ -798,20 +798,20 @@ describe('picom', function () {
 			service1.fetch({
 				service: 'round',
 				cmd: 'name'
-			}).then(function (name) {
-				expect(name).to.equal('round robin A');
+			}).then(function (name1) {
+				expect(name1).to.equal('round robin A');
 
 				return service1.fetch({
 					service: 'round',
 					cmd: 'name'
-				}).then(function (name) {
-					expect(name).to.equal('round robin B');
+				}).then(function (name2) {
+					expect(name2).to.equal('round robin B');
 
 					return service1.fetch({
 						service: 'round',
 						cmd: 'name'
-					}).then(function (name) {
-						expect(name).to.equal('round robin A');
+					}).then(function (name3) {
+						expect(name3).to.equal('round robin A');
 						done();
 					});
 				});
