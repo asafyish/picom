@@ -2,42 +2,13 @@
 
 const net = require('net');
 const domain = require('domain');
-const consul = require('consul')();
+const Consul = require('consul');
 const through2 = require('through2');
 const msgpack = require('msgpack5')();
 const lengthPrefixedStream = require('length-prefixed-stream');
 const pipe = require('multipipe');
 
 let roundRobin = {};
-
-function getNextService(remoteServiceName) {
-	return new Promise(function (resolve, reject) {
-		consul.catalog.service.nodes(remoteServiceName, function (err, services) {
-			if (err) {
-				return reject(err);
-			}
-
-			// Empty services found is a valid state
-			if (services.length === 0) {
-				return resolve();
-			}
-
-			// is relatively small memory footprint
-			// Store a round-robin index for each service
-			if (!roundRobin[remoteServiceName]) {
-				roundRobin[remoteServiceName] = 0;
-			}
-
-			// If round-robin index is out of bounds
-			if (services.length <= roundRobin[remoteServiceName]) {
-				roundRobin[remoteServiceName] = 0;
-			}
-
-			// Return the service and increment the round-robin index
-			resolve(services[roundRobin[remoteServiceName]++]);
-		});
-	});
-}
 
 function decodeStream() {
 	return pipe(lengthPrefixedStream.decode(), msgpack.decoder());
@@ -49,11 +20,18 @@ function encodeStream() {
 
 let Picom = function (serviceName, options) {
 	this.serviceName = serviceName;
-	this.isStarted = false;
 	this.methods = {};
+	this.server = null;
+	options = options || {};
+
 	this.options = {
-		ttl: options ? options.ttl || 30 : 30
-	}
+		ttl: options.ttl ? options.ttl : 30
+	};
+
+	this.consul = new Consul({
+		host: options.consulHost || '127.0.0.1',
+		port: options.consulPort || 8500
+	})
 };
 
 Picom.prototype.stream = function (args, streamPayload) {
@@ -83,7 +61,7 @@ Picom.prototype.stream = function (args, streamPayload) {
 	}));
 
 	// Try round robin a service
-	getNextService(args.service).then(function (remoteService) {
+	this.getNextService(args.service).then(function (remoteService) {
 		if (!remoteService) {
 			pipedStream.emit('error', new Error('The service "' + args.service + '" is down'));
 		}
@@ -143,15 +121,14 @@ Picom.prototype.fetch = function (args, streamPayload) {
 
 Picom.prototype.expose = function (methods) {
 
-	if (this.isStarted) {
+	if (this.server) {
 		throw new Error('Service already started');
 	}
 
 	let self = this;
-	this.isStarted = true;
 	let server = net.createServer({allowHalfOpen: true}, this.onConnection.bind(this));
 
-	server.listen(function (err) {
+	this.server = server.listen(function (err) {
 
 		// TODO Check if err works
 		if (err) {
@@ -162,25 +139,30 @@ Picom.prototype.expose = function (methods) {
 		let checkId = 'check:' + serviceId;
 
 		// Register the service to consul
-		consul.agent.service.register({id: serviceId, name: self.serviceName, port: address.port}, function (err) {
+		self.consul.agent.service.register({id: serviceId, name: self.serviceName, port: address.port}, function (err) {
 			if (err) {
 				throw err;
 			}
 
 			// Register a check
-			consul.agent.check.register({name: 'check:' + serviceId, id: checkId, serviceid: serviceId, ttl: self.options.ttl + 's'}, function(err) {
+			self.consul.agent.check.register({
+				name: 'check:' + serviceId,
+				id: checkId,
+				serviceid: serviceId,
+				ttl: self.options.ttl + 's'
+			}, function (err) {
 				if (err) {
 					throw err;
 				}
 
 				// Immediately after registering a check - pass it
-				consul.agent.check.pass({id: checkId}, function(err) {
+				self.consul.agent.check.pass({id: checkId}, function (err) {
 					if (err) throw err;
 				});
 
 				// Every 80% of ttl, pass the check
-				setTimeout(function() {
-					consul.agent.check.pass({id: checkId}, function(err) {
+				setTimeout(function () {
+					self.consul.agent.check.pass({id: checkId}, function (err) {
 						if (err) throw err;
 					});
 				}, parseInt(self.options.ttl * 0.8) * 1000).unref();
@@ -273,6 +255,37 @@ Picom.prototype.onConnection = function (socket) {
 				this.end();
 			}
 		}));
+};
+
+Picom.prototype.getNextService = function (remoteServiceName) {
+	let self = this;
+
+	return new Promise(function (resolve, reject) {
+		self.consul.catalog.service.nodes(remoteServiceName, function (err, services) {
+			if (err) {
+				return reject(err);
+			}
+
+			// Empty services found is a valid state
+			if (services.length === 0) {
+				return resolve();
+			}
+
+			// is relatively small memory footprint
+			// Store a round-robin index for each service
+			if (!roundRobin[remoteServiceName]) {
+				roundRobin[remoteServiceName] = 0;
+			}
+
+			// If round-robin index is out of bounds
+			if (services.length <= roundRobin[remoteServiceName]) {
+				roundRobin[remoteServiceName] = 0;
+			}
+
+			// Return the service and increment the round-robin index
+			resolve(services[roundRobin[remoteServiceName]++]);
+		});
+	});
 };
 
 module.exports = Picom;
