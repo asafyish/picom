@@ -23,7 +23,7 @@
 	},
 	"dependencies": {
 		"consul": "0.14.0",
-		"length-prefixed-stream": "1.1.0",
+		"length-prefixed-stream": "1.2.0",
 		"through2": "0.6.5",
 		"msgpack5": "2.2.0",
 		"multipipe": "0.1.2"
