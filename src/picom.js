@@ -88,6 +88,8 @@ Picom.prototype.stream = function (args, streamPayload) {
 
 			this.pipe(pipedStream);
 		});
+	}).catch(function(err) {
+		pipedStream.emit('error', err);
 	});
 
 	return pipedStream;
