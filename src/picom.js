@@ -66,7 +66,7 @@ Picom.prototype.stream = function (args, streamPayload) {
 			pipedStream.emit('error', new Error('The service "' + args.service + '" is down'));
 		}
 
-		let connection = net.connect({host: remoteService.Address, port: remoteService.ServicePort});
+		let connection = net.connect({host: remoteService.host, port: remoteService.port});
 		connection.once('error', function (err) {
 			pipedStream.emit(err);
 		});
@@ -259,7 +259,7 @@ Picom.prototype.getNextService = function (remoteServiceName) {
 	let self = this;
 
 	return new Promise(function (resolve, reject) {
-		self.consul.catalog.service.nodes(remoteServiceName, function (err, services) {
+		self.consul.health.service({service: remoteServiceName, passing: true}, function (err, services) {
 			if (err) {
 				return reject(err);
 			}
@@ -281,7 +281,13 @@ Picom.prototype.getNextService = function (remoteServiceName) {
 			}
 
 			// Return the service and increment the round-robin index
-			resolve(services[roundRobin[remoteServiceName]++]);
+			resolve({
+				host: services[roundRobin[remoteServiceName]].Node.Address,
+				port: services[roundRobin[remoteServiceName]].Service.Port
+			});
+
+			// Incrment to next service
+			roundRobin[remoteServiceName]++;
 		});
 	});
 };
