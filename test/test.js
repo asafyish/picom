@@ -115,6 +115,12 @@ describe('picom', function () {
 		});
 
 		service2.expose({
+			'return-date': function (args, inStream, outStream) {
+				if (!(args.now instanceof Date)) {
+					throw new Error('Not a date object');
+				}
+				outStream.end(new Date());
+			},
 			'method1-service2': function (args, inStream, outStream) {
 				outStream.end('method1-service2-reply');
 			},
@@ -388,6 +394,19 @@ describe('picom', function () {
 				cmd: 'fetchEchoNext'
 			}, payload).then(function (response) {
 				expect(response).to.deep.equal(arr);
+				done();
+			}).catch(done);
+		});
+
+		it('should encode decode date correctly', function (done) {
+			service2.fetch({
+				service: 'service2',
+				cmd: 'return-date',
+				args: {
+					now: new Date()
+				}
+			}).then(function (response) {
+				expect(response).to.be.instanceof(Date);
 				done();
 			}).catch(done);
 		});

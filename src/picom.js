@@ -8,6 +8,18 @@ const msgpack = require('msgpack5')();
 const lengthPrefixedStream = require('length-prefixed-stream');
 const pipe = require('multipipe');
 
+msgpack.register(0x42, Date, encodeDate, decodeDate);
+
+function encodeDate(date) {
+	let buf = new Buffer(8);
+	buf.writeDoubleLE(date.getTime());
+	return buf;
+}
+
+function decodeDate(buf) {
+	return new Date(buf.readDoubleLE(0));
+}
+
 let roundRobin = {};
 
 function decodeStream() {
@@ -69,7 +81,11 @@ Picom.prototype.stream = function (args, streamPayload) {
 		}
 
 		let connection = net.connect({host: remoteService.host, port: remoteService.port});
+
 		connection.once('error', function (err) {
+			if (err.code === 'ECONNREFUSED') {
+				// TODO Implement retry
+			}
 			pipedStream.emit('error', err);
 		});
 		connection.once('connect', function () {
