@@ -161,7 +161,7 @@ Picom.prototype.expose = function (methods) {
 				});
 
 				// Every 80% of ttl, pass the check
-				setTimeout(function () {
+				setInterval(function () {
 					self.consul.agent.check.pass({id: checkId}, function () {
 					});
 				}, parseInt(self.options.ttl * 0.8) * 1000).unref();
