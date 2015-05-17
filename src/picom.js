@@ -38,7 +38,8 @@ let Picom = function (serviceName, options) {
 	options = options || {};
 
 	this.options = {
-		ttl: options.ttl ? options.ttl : 30
+		ttl: options.ttl ? options.ttl : 30,
+		retries: options.retries ? options.retries : 3
 	};
 
 	this.consul = new Consul({
@@ -48,6 +49,9 @@ let Picom = function (serviceName, options) {
 };
 
 Picom.prototype.stream = function (args, streamPayload) {
+	let self = this;
+	let retries = self.options.retries;
+
 	let pipedStream = pipe(decodeStream(), through2.obj(function (data, enc, callback) {
 		if (data._type_ === 'error') {
 			callback(new Error(data._message_));
@@ -73,8 +77,11 @@ Picom.prototype.stream = function (args, streamPayload) {
 		callback(new Error('Connection dropped by other side'));
 	}));
 
-	// Try round robin a service
-	this.getNextService(args.service).then(function (remoteService) {
+	function streamError(err) {
+		pipedStream.emit('error', err);
+	}
+
+	function streamData(remoteService) {
 		if (!remoteService) {
 			pipedStream.emit('error', new Error('The service "' + args.service + '" is down'));
 			return;
@@ -83,11 +90,22 @@ Picom.prototype.stream = function (args, streamPayload) {
 		let connection = net.connect({host: remoteService.host, port: remoteService.port});
 
 		connection.once('error', function (err) {
-			if (err.code === 'ECONNREFUSED') {
-				// TODO Implement retry
+
+			// If connection failed, retry
+			if (err.code === 'ECONNREFUSED' && retries > 0) {
+				retries--;
+
+				// For unknown reason, if we call this method immediately, it doesn't return any service
+				setTimeout(function () {
+					self.getNextService(args.service).then(streamData).catch(streamError);
+				}, 100);
+			} else {
+
+				// We reached maximum number of retries
+				pipedStream.emit('error', err);
 			}
-			pipedStream.emit('error', err);
 		});
+
 		connection.once('connect', function () {
 			// Create an out stream with all the necessary transformations
 			let outStream = encodeStream();
@@ -106,9 +124,10 @@ Picom.prototype.stream = function (args, streamPayload) {
 
 			this.pipe(pipedStream);
 		});
-	}).catch(function (err) {
-		pipedStream.emit('error', err);
-	});
+	}
+
+	// Try round robin a service
+	this.getNextService(args.service).then(streamData).catch(streamError);
 
 	return pipedStream;
 };
