@@ -8,6 +8,7 @@ const msgpack = require('msgpack5')();
 const lengthPrefixedStream = require('length-prefixed-stream');
 const pipe = require('multipipe');
 
+// Register date type
 msgpack.register(0x42, Date, encodeDate, decodeDate);
 
 function encodeDate(date) {
@@ -94,11 +95,7 @@ Picom.prototype.stream = function (args, streamPayload) {
 			// If connection failed, retry
 			if (err.code === 'ECONNREFUSED' && retries > 0) {
 				retries--;
-
-				// For unknown reason, if we call this method immediately, it doesn't return any service
-				setTimeout(function () {
-					self.getNextService(args.service).then(streamData).catch(streamError);
-				}, 100);
+				self.getNextService(args.service).then(streamData).catch(streamError);
 			} else {
 
 				// We reached maximum number of retries
@@ -137,6 +134,11 @@ Picom.prototype.fetch = function (args, streamPayload) {
 	return new Promise(function (resolve, reject) {
 		let response = [];
 		let s = self.stream(args, streamPayload);
+
+		s.once('error', function (err) {
+			reject(err);
+		});
+
 		s.pipe(through2.obj(function (chunk, enc, callback) {
 			response.push(chunk);
 			callback();
@@ -152,9 +154,6 @@ Picom.prototype.fetch = function (args, streamPayload) {
 			}
 			callback();
 		}));
-		s.once('error', function (err) {
-			reject(err);
-		});
 	});
 };
 
@@ -324,13 +323,18 @@ Picom.prototype.getNextService = function (remoteServiceName) {
 			}
 
 			// Return the service and increment the round-robin index
-			resolve({
-				host: services[roundRobin[remoteServiceName]].Node.Address,
-				port: services[roundRobin[remoteServiceName]].Service.Port
-			});
+			process.nextTick(function () {
 
-			// Incrment to next service
-			roundRobin[remoteServiceName]++;
+				// If we call resolve directly (without nextTick) then the request is not yet over,
+				// which can cause some weird errors
+				resolve({
+					host: services[roundRobin[remoteServiceName]].Node.Address,
+					port: services[roundRobin[remoteServiceName]].Service.Port
+				});
+
+				// Increment to next service
+				roundRobin[remoteServiceName]++;
+			});
 		});
 	});
 };
