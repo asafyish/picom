@@ -166,10 +166,8 @@ describe('picom', function () {
 			'add-and-multiple': function (args, inStream, outStream) {
 				service2.stream({
 					service: 'service1',
-					cmd: 'add',
-					args: args
-				}).pipe(through.obj(function (chunk, enc, callback) {
-					//outStream.end(response * args.c);
+					cmd: 'add'
+				}, args).pipe(through.obj(function (chunk, enc, callback) {
 					callback(null, chunk * args.c);
 				})).pipe(outStream);
 			},
@@ -231,9 +229,8 @@ describe('picom', function () {
 		it('should call add and get a reply', function (done) {
 			service2.stream({
 				service: 'service1',
-				cmd: 'add',
-				args: {a: 2, b: 3}
-			}).pipe(through.obj(function (chunk, enc, callback) {
+				cmd: 'add'
+			}, {a: 2, b: 3}).pipe(through.obj(function (chunk, enc, callback) {
 				expect(chunk).to.equal(5);
 				done();
 				callback();
@@ -243,9 +240,8 @@ describe('picom', function () {
 		it('should call add-and-multiple which calls other service and get a reply', function (done) {
 			service3.stream({
 				service: 'service2',
-				cmd: 'add-and-multiple',
-				args: {a: 2, b: 3, c: 10}
-			}).pipe(through.obj(function (chunk, enc, callback) {
+				cmd: 'add-and-multiple'
+			}, {a: 2, b: 3, c: 10}).pipe(through.obj(function (chunk, enc, callback) {
 				expect(chunk).to.equal(50);
 				done();
 				callback();
@@ -401,10 +397,9 @@ describe('picom', function () {
 		it('should encode decode date correctly', function (done) {
 			service2.fetch({
 				service: 'service2',
-				cmd: 'return-date',
-				args: {
-					now: new Date()
-				}
+				cmd: 'return-date'
+			}, {
+				now: new Date()
 			}).then(function (response) {
 				expect(response).to.be.instanceof(Date);
 				done();
@@ -419,10 +414,9 @@ describe('picom', function () {
 
 			service3.fetch({
 				service: 'service1',
-				cmd: 'wait',
-				args: {
-					timeout: timeout
-				}
+				cmd: 'wait'
+			}, {
+				timeout: timeout
 			}).then(function (response) {
 				expect(response).to.equal('done');
 				expect(isOk).to.equal(true);
@@ -455,10 +449,9 @@ describe('picom', function () {
 
 			service3.fetch({
 				service: 'service1',
-				cmd: 'ignore',
-				args: {
-					timeout: timeout
-				}
+				cmd: 'ignore'
+			}, {
+				timeout: timeout
 			}, stream).then(function (response) {
 				expect(response).to.equal('done');
 				expect(isOk).to.equal(true);
@@ -479,10 +472,9 @@ describe('picom', function () {
 
 			service3.fetch({
 				service: 'service1',
-				cmd: 'wait',
-				args: {
-					timeout: timeout
-				}
+				cmd: 'wait'
+			}, {
+				timeout: timeout
 			}).then(function (response) {
 				expect(response).to.equal('done');
 				expect(isOk).to.equal(true);
@@ -524,11 +516,10 @@ describe('picom', function () {
 			let payload = _(arr);
 			service3.stream({
 				service: 'service1',
-				cmd: 'streamEchoMultiply',
-				args: {
-					size: size,
-					multiply: multiply
-				}
+				cmd: 'streamEchoMultiply'
+			}, {
+				size: size,
+				multiply: multiply
 			}, payload).pipe(through.obj(function (chunk, enc, callback) {
 				response.push(chunk);
 				callback();
@@ -563,11 +554,10 @@ describe('picom', function () {
 			let payload = _(arr);
 			service3.stream({
 				service: 'service1',
-				cmd: 'streamEchoMultiply',
-				args: {
-					size: size,
-					multiply: multiply
-				}
+				cmd: 'streamEchoMultiply'
+			}, {
+				size: size,
+				multiply: multiply
 			}, payload).pipe(through.obj(function (chunk, enc, callback) {
 				response.push(chunk);
 				callback();
@@ -668,10 +658,9 @@ describe('picom', function () {
 
 			service3.fetch({
 				service: 'service1',
-				cmd: 'wait',
-				args: {
-					timeout: timeout
-				}
+				cmd: 'wait'
+			}, {
+				timeout: timeout
 			}, payload).then(function (response) {
 				expect(response).to.equal('done');
 				expect(isOk).to.equal(true);
@@ -691,9 +680,8 @@ describe('picom', function () {
 			for (let i = 0; i < 50; i++) {
 				requests.push(service2.stream({
 					service: 'service1',
-					cmd: 'echo',
-					args: {text: '' + i}
-				}));
+					cmd: 'echo'
+				}, {text: '' + i}));
 				responses.push('' + i);
 			}
 			_.merge(requests).toArray(function (combined) {

@@ -49,7 +49,13 @@ let Picom = function (serviceName, options) {
 	});
 };
 
-Picom.prototype.stream = function (args, streamPayload) {
+Picom.prototype.stream = function (service, args, streamPayload) {
+
+	if (args && args.pipe && !args.hasOwnProperty('pipe')) {
+		streamPayload = args;
+		args = null;
+	}
+
 	let self = this;
 	let retries = self.options.retries;
 
@@ -84,7 +90,7 @@ Picom.prototype.stream = function (args, streamPayload) {
 
 	function streamData(remoteService) {
 		if (!remoteService) {
-			pipedStream.emit('error', new Error('The service "' + args.service + '" is down'));
+			pipedStream.emit('error', new Error('The service "' + service.service + '" is down'));
 			return;
 		}
 
@@ -95,7 +101,7 @@ Picom.prototype.stream = function (args, streamPayload) {
 			// If connection failed, retry
 			if (err.code === 'ECONNREFUSED' && retries > 0) {
 				retries--;
-				self.getNextService(args.service).then(streamData).catch(streamError);
+				self.getNextService(service.service).then(streamData).catch(streamError);
 			} else {
 
 				// We reached maximum number of retries
@@ -110,8 +116,8 @@ Picom.prototype.stream = function (args, streamPayload) {
 
 			// Write the command type
 			outStream.write({
-				cmd: args.cmd,
-				args: args.args
+				cmd: service.cmd,
+				args: args
 			});
 
 			// Pipe the payload
@@ -124,16 +130,22 @@ Picom.prototype.stream = function (args, streamPayload) {
 	}
 
 	// Try round robin a service
-	this.getNextService(args.service).then(streamData).catch(streamError);
+	this.getNextService(service.service).then(streamData).catch(streamError);
 
 	return pipedStream;
 };
 
-Picom.prototype.fetch = function (args, streamPayload) {
+Picom.prototype.fetch = function (service, args, streamPayload) {
 	let self = this;
 	return new Promise(function (resolve, reject) {
 		let response = [];
-		let s = self.stream(args, streamPayload);
+
+		if (args && args.pipe && !args.hasOwnProperty('pipe')) {
+			streamPayload = args;
+			args = null;
+		}
+
+		let s = self.stream(service, args, streamPayload);
 
 		s.once('error', function (err) {
 			reject(err);
@@ -143,7 +155,7 @@ Picom.prototype.fetch = function (args, streamPayload) {
 			response.push(chunk);
 			callback();
 		}, function (callback) {
-			if (args.multiple) {
+			if (service.multiple) {
 				resolve(response);
 			} else {
 				if (response.length > 0) {
