@@ -20,6 +20,7 @@ function encodeStream() {
 
 let Picom = function (serviceName, options) {
 	this.serviceName = serviceName;
+	this.serviceId = '';
 	this.methods = {};
 	this.server = null;
 	options = options || {};
@@ -64,11 +65,12 @@ Picom.prototype.stream = function (args, streamPayload) {
 	this.getNextService(args.service).then(function (remoteService) {
 		if (!remoteService) {
 			pipedStream.emit('error', new Error('The service "' + args.service + '" is down'));
+			return;
 		}
 
 		let connection = net.connect({host: remoteService.host, port: remoteService.port});
 		connection.once('error', function (err) {
-			pipedStream.emit(err);
+			pipedStream.emit('error', err);
 		});
 		connection.once('connect', function () {
 			// Create an out stream with all the necessary transformations
@@ -88,7 +90,7 @@ Picom.prototype.stream = function (args, streamPayload) {
 
 			this.pipe(pipedStream);
 		});
-	}).catch(function(err) {
+	}).catch(function (err) {
 		pipedStream.emit('error', err);
 	});
 
@@ -137,20 +139,24 @@ Picom.prototype.expose = function (methods) {
 			throw listenError;
 		}
 		let address = server.address();
-		let serviceId = self.serviceName + '-' + address.port;
-		let checkId = 'check:' + serviceId;
+		self.serviceId = self.serviceName + '-' + address.port;
+		let checkId = 'check:' + self.serviceId;
 
 		// Register the service to consul
-		self.consul.agent.service.register({id: serviceId, name: self.serviceName, port: address.port}, function (registerError) {
+		self.consul.agent.service.register({
+			id: self.serviceId,
+			name: self.serviceName,
+			port: address.port
+		}, function (registerError) {
 			if (registerError) {
 				throw registerError;
 			}
 
 			// Register a check
 			self.consul.agent.check.register({
-				name: 'check:' + serviceId,
+				name: 'check:' + self.serviceId,
 				id: checkId,
-				serviceid: serviceId,
+				serviceid: self.serviceId,
 				ttl: self.options.ttl + 's'
 			}, function (checkError) {
 				if (checkError) {
@@ -215,7 +221,7 @@ Picom.prototype.onConnection = function (socket) {
 		transmitError(err, outStream, socket);
 	});
 
-	socket.on('error', function () {
+	socket.once('error', function () {
 
 		// In case of error, we need to manually close the socket
 		this.end();
@@ -290,6 +296,22 @@ Picom.prototype.getNextService = function (remoteServiceName) {
 
 			// Incrment to next service
 			roundRobin[remoteServiceName]++;
+		});
+	});
+};
+
+Picom.prototype.close = function () {
+	let self = this;
+
+	return new Promise(function (resolve, reject) {
+		self.server.close(function () {
+			self.consul.agent.service.deregister({id: self.serviceId}, function (err) {
+				if (err) {
+					return reject(err);
+				}
+
+				resolve();
+			});
 		});
 	});
 };

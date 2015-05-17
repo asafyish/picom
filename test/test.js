@@ -320,9 +320,10 @@ describe('picom', function () {
 			}));
 		});
 
-		it.skip('should call service with a file stream', function (done) {
-			let payload = fs.createReadStream('./test/dummy.txt');
-			let content = fs.readFileSync('./test/dummy.txt');
+		it('should call service with a file stream', function (done) {
+			let filename = './README.md';
+			let payload = fs.createReadStream(filename);
+			let content = fs.readFileSync(filename);
 
 			service3.stream({
 				service: 'service1',
@@ -558,33 +559,6 @@ describe('picom', function () {
 			}));
 		});
 
-		it.skip('should call with a large stream as payload', function (done) {
-			let arr = [];
-			let response = [];
-
-			for (let i = 0; i < 100000; i++) {
-				arr.push({
-					index: i,
-					dmdsjksjkdjfefjkef: 'akkejkjkrjekjr',
-					kjekjkrjekrjke: 23984934,
-					kekfjkejjtjt: 'mmakkucudhneje749'
-				});
-			}
-
-			let payload = _(arr);
-			service3.stream({
-				service: 'service1',
-				cmd: 'streamEcho'
-			}, payload).pipe(through.obj(function (chunk, enc, callback) {
-				response.push(chunk);
-				callback();
-			}, function (callback) {
-				expect(response).to.deep.equal(arr);
-				done();
-				callback();
-			}));
-		});
-
 		it('promise', function (done) {
 			let arr = [];
 
@@ -719,7 +693,7 @@ describe('picom', function () {
 				}));
 				responses.push('method1-service2-reply');
 			}
-			_.merge(requests).toArray(function (combined) {
+			_(requests).toArray(function (combined) {
 				expect(combined).to.deep.equals(responses);
 				done();
 			});
@@ -819,13 +793,14 @@ describe('picom', function () {
 		});
 
 		it.skip('should stop a service and check if we can still reach it', function (done) {
-			service2.stream({
-				service: 'service1',
-				cmd: 'never-reply'
-			}).pull(function (err) {
-				expect(err).to.equal('service2:not-real Does not exist');
-				done();
-			});
+			service1.close().then(function () {
+				service2.stream({
+					service: 'service1',
+					cmd: 'method1-service1'
+				}).on('error', function (err) {
+					done();
+				});
+			}).catch(done);
 		});
 
 		it.skip('should timeout', function (done) {
@@ -838,5 +813,4 @@ describe('picom', function () {
 			});
 		});
 	});
-})
-;
+});
