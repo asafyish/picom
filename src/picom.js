@@ -40,7 +40,8 @@ let Picom = function (serviceName, options) {
 
 	this.options = {
 		ttl: options.ttl ? options.ttl : 30,
-		retries: options.retries ? options.retries : 3
+		retries: options.retries ? options.retries : 3,
+		port: options.port ? options.port : 0
 	};
 
 	this.consul = new Consul({
@@ -181,7 +182,7 @@ Picom.prototype.expose = function (methods) {
 	let self = this;
 	let server = net.createServer({allowHalfOpen: true}, this.onConnection.bind(this));
 
-	this.server = server.listen(function (listenError) {
+	this.server = server.listen(self.options.port, function (listenError) {
 
 		// TODO Check if err works
 		if (listenError) {

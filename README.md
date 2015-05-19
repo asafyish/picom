@@ -3,10 +3,10 @@
 Picom(pico-message) is a high performance, self-discovery([consul](https://www.consul.io/)), micro services communication layer.
 
 ## Inner workings
-Picom uses a TCP connection to transfer data between node.  
+Picom uses a TCP connection to transfer data between services.  
 
 TCP connections are a "bytestream", they have no start/end notation, we need to frame the stream,  
-for that, we are using length-prefixed which means we are putting the stream length in the first byte, this is more  
+for that, we are using length-prefix which means we are putting the stream length in the first byte, this is more  
 efficient then using a end-delimiter because we can create a buffer with the exact stream size upfront, with  
 no need to resize.
 
@@ -63,6 +63,7 @@ Parameters:
  * consulPort (Integer, default: 8500): Consul.io port
  * ttl (Integer, default: 30): After how many seconds of no response the server is considered "failing"
  * retries (Integer, default: 3): How many times try reconnect (to different hosts)
+ * port (Integer, default: random): Used to specify a port, if omitted, a random port will be chosen
 
 ### picom.expose(methods)
 
@@ -134,4 +135,4 @@ myService.fetch({
 
 ### picom.end()
 
-Stop all timers, stops the server from accepting new connections and keeps existing connections and inform consul.io.
+Stop all timers, inform consul.io, stops the server from accepting new connections and keeps existing connections.
