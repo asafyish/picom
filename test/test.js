@@ -799,7 +799,7 @@ describe('picom', function () {
 			}).catch(done);
 		});
 
-		it.skip('should stop a service and check if we can still reach it', function (done) {
+		it('should stop a service and check if we can still reach it', function (done) {
 			service1.close().then(function () {
 				service2.stream({
 					service: 'service1',

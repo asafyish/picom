@@ -112,19 +112,22 @@ Picom.prototype.stream = function (service, args, streamPayload) {
 		connection.once('connect', function () {
 			// Create an out stream with all the necessary transformations
 			let outStream = encodeStream();
+
+			// Stream through the socket
 			outStream.pipe(this);
 
-			// Write the command type
+			// Write the header
 			outStream.write({
 				cmd: service.cmd,
 				args: args
 			});
 
-			// Pipe the payload
+			// Stream the payload
 			if (streamPayload && streamPayload.pipe) {
 				streamPayload.pipe(outStream);
 			}
 
+			// Read from the socket
 			this.pipe(pipedStream);
 		});
 	}
@@ -205,6 +208,12 @@ Picom.prototype.expose = function (methods) {
 				serviceid: self.serviceId,
 				ttl: self.options.ttl + 's'
 			}, function (checkError) {
+
+				// If the service terminated before this callback was called
+				if (!self.server) {
+					return;
+				}
+
 				if (checkError) {
 					throw checkError;
 				}
@@ -355,12 +364,16 @@ Picom.prototype.close = function () {
 	let self = this;
 
 	return new Promise(function (resolve, reject) {
-		self.server.close(function () {
-			self.consul.agent.service.deregister({id: self.serviceId}, function (err) {
-				if (err) {
-					return reject(err);
-				}
 
+		// Notify consul we are not accepting new connections
+		self.consul.agent.service.deregister({id: self.serviceId}, function (err) {
+			if (err) {
+				return reject(err);
+			}
+
+			// Gracefully stop the server, while waiting for existing connections to terminate
+			self.server.close(function () {
+				self.server = null;
 				resolve();
 			});
 		});
