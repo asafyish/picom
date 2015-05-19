@@ -1,6 +1,6 @@
 {
 	"name": "picom",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"license": "MIT",
 	"author": "Asaf Yishai",
 	"homepage": "https://github.com/asafyish/picom",
@@ -12,7 +12,8 @@
 		"distributed",
 		"scalability",
 		"discovery",
-		"failover"
+		"failover",
+		"consul"
   ],
 	"repository": {
 		"type": "git",
