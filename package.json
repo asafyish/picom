@@ -1,6 +1,6 @@
 {
 	"name": "picom",
-	"version": "0.3.2",
+	"version": "0.3.3",
 	"license": "MIT",
 	"author": "Asaf Yishai",
 	"homepage": "https://github.com/asafyish/picom",
@@ -35,7 +35,7 @@
 		"gulp-eslint": "0.12.0",
 		"gulp-mocha": "2.0.1",
 		"chai": "2.3.0",
-		"highland": "2.5.0",
+		"highland": "2.5.1",
 		"bluebird": "2.9.25"
 	},
 	"engines": {

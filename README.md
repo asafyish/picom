@@ -12,7 +12,7 @@ no need to resize.
 
 [Msgpack](http://msgpack.org/) is used as a serialization format, it allows us to send more data per request.   
 
-Discovery is been made through consul, when calling expose the service registers itself to consul, with health  
+Discovery is been made through consul, when calling the "expose" method, the service registers itself to consul, with health  
 checks, afterwards, every 'ttl' seconds picom inform consul it's still alive. If a service misses the ttl,  
 it's moved into a "failing" state and won't receive further requests until it pass the health check.  
 The first few versions used UDP discovery and Multicast DNS discovery for discovering other services  
