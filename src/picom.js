@@ -261,9 +261,9 @@ Picom.prototype.onConnection = function (socket) {
 		};
 
 		if (error instanceof Error) {
-			packet._message_ = error.message;
+			packet._message_ = '[' + self.serviceName + '] ' + error.message;
 		} else {
-			packet._message_ = error;
+			packet._message_ = '[' + self.serviceName + '] ' + error;
 		}
 
 		stream.end(packet);

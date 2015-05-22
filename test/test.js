@@ -737,22 +737,12 @@ describe('picom', function () {
 			});
 		});
 
-		it('should get a failed response from service', function (done) {
+		it.only('should get a failed response from service', function (done) {
 			service3.stream({
 				service: 'service2',
 				cmd: 'throws'
-			}).on('error', function (err) {
-				expect(err.message).to.equal(REQUEST_ERROR);
-				done();
-			});
-		});
-
-		it('should get a failed response from service', function (done) {
-			service3.stream({
-				service: 'service2',
-				cmd: 'throws'
-			}).on('error', function (err) {
-				expect(err.message).to.equal(REQUEST_ERROR);
+			}).once('error', function (err) {
+				expect(err.message).to.equal('[service2] ' + REQUEST_ERROR);
 				done();
 			});
 		});
