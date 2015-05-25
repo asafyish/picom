@@ -737,7 +737,7 @@ describe('picom', function () {
 			});
 		});
 
-		it.only('should get a failed response from service', function (done) {
+		it('should get a failed response from service', function (done) {
 			service3.stream({
 				service: 'service2',
 				cmd: 'throws'
