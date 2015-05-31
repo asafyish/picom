@@ -82,7 +82,7 @@ Picom.prototype.stream = function (service, args, streamPayload) {
 			return callback();
 		}
 
-		callback(new Error('Connection dropped by other side'));
+		callback(new Error('The service "' + service.service + '" dropped the connection'));
 	}));
 
 	function streamError(err) {
