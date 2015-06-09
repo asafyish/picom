@@ -8,9 +8,6 @@ const msgpack = require('msgpack5')();
 const lengthPrefixedStream = require('length-prefixed-stream');
 const pipe = require('multipipe');
 
-// Register date type
-msgpack.register(0x42, Date, encodeDate, decodeDate);
-
 function encodeDate(date) {
 	let buf = new Buffer(8);
 	buf.writeDoubleLE(date.getTime());
@@ -20,6 +17,9 @@ function encodeDate(date) {
 function decodeDate(buf) {
 	return new Date(buf.readDoubleLE(0));
 }
+
+// Register date type
+msgpack.register(0x42, Date, encodeDate, decodeDate);
 
 let roundRobin = {};
 
