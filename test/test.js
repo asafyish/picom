@@ -1,5 +1,7 @@
 'use strict';
 
+/* global describe, before, it */
+
 // Mocha setup
 var chai = require('chai');
 var fs = require('fs');
@@ -278,7 +280,7 @@ describe('picom', function () {
 				// This is an error
 				done(response);
 			}).catch(function (err) {
-				expect(err.message).to.equal(REQUEST_ERROR);
+				expect(err.message).to.equal('[service2] ' + REQUEST_ERROR);
 				done();
 			});
 		});
@@ -288,7 +290,7 @@ describe('picom', function () {
 				service: 'service1',
 				cmd: 'promise-reject'
 			}).catch(function (err) {
-				expect(err.message).to.equal(REQUEST_ERROR);
+				expect(err.message).to.equal('[service1] ' + REQUEST_ERROR);
 				done();
 			});
 		});
@@ -325,6 +327,8 @@ describe('picom', function () {
 		it('should call service with a file stream', function (done) {
 			let filename = './README.md';
 			let payload = fs.createReadStream(filename);
+
+			/* eslint no-sync: 0 */
 			let content = fs.readFileSync(filename);
 
 			service3.stream({
@@ -363,6 +367,7 @@ describe('picom', function () {
 				service: 'service2',
 				cmd: 'emptyResponse'
 			}, payload).then(function (response) {
+				/* eslint no-unused-expressions: 0 */
 				expect(response).to.be.undefined;
 				done();
 			}).catch(done);
@@ -732,7 +737,7 @@ describe('picom', function () {
 				service: 'service1',
 				cmd: 'async-fail'
 			}).on('error', function (err) {
-				expect(err.message).to.equal(REQUEST_ERROR);
+				expect(err.message).to.equal('[service1] ' + REQUEST_ERROR);
 				done();
 			});
 		});
