@@ -1,11 +1,14 @@
 'use strict';
 
-let Picom = require('../');
-let service = new Picom('pong');
+/* eslint no-console: 0 */
+const Picom = require('../');
+const service = new Picom('pong');
+
+service.expose({
+	get: function (msg, reply) {
+		console.log('Got Ping. Sent Pong');
+		reply(null, {message: 'response from pong'});
+	}
+});
 
 console.log('Pong is ready');
-service.expose('pong', function(args, inStream, outStream) {
-	console.log('Got Ping. Sent Pong');
-	outStream.end('PONG');
-});
-service.start();

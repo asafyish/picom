@@ -1,1 +1,1 @@
-module.exports = require('./src/picom');
+module.exports = require('./lib/picom');

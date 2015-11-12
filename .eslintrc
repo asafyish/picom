@@ -6,6 +6,7 @@
 	"rules": {
 		"no-alert": 2,
 		"no-array-constructor": 2,
+		"prefer-const": 2,
 		"no-caller": 2,
 		"no-bitwise": 0,
 		"no-catch-shadow": 2,
@@ -54,7 +55,7 @@
 		"no-iterator": 2,
 		"no-mixed-requires": [0, false],
 		"no-extra-parens": 2,
-		"no-shadow": 2,
+		"no-shadow-restricted-names": 2,
 		"no-use-before-define": 2,
 		"no-redeclare": 2,
 		"no-regex-spaces": 2,
