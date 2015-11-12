@@ -1,6 +1,6 @@
-# Introduction
+# Introduction (Out of date - 0.4.0 is a complete rewrite to use nats.io)
 
-Picom(pico-message) is a high performance, self-discovery([consul](https://www.consul.io/)), micro services communication layer.
+Picom(pico-message) is a high performance, self-discovery([nats.io](http://nats.io/)), micro services communication layer.
 
 ## Inner workings
 Picom uses a TCP connection to transfer data between services.  
@@ -43,10 +43,10 @@ On device 2:
 var Picom = require('picom');
 var myService = new Picom('service2');
 myService.stream({
-	service: 'service1', 
-	cmd: 'add', 
+	service: 'service1',
+	cmd: 'add',
 }, {
-	a: 2, 
+	a: 2,
 	b: 5
 }).stream();
 ```
@@ -97,10 +97,10 @@ Usage
 
 ```js
 myService.stream({
-	service: 'service1', 
+	service: 'service1',
 	cmd: 'add'
 }, {
-	a: 2, 
+	a: 2,
 	b: 5}
 });
 ```
@@ -125,10 +125,10 @@ Usage
 
 ```js
 myService.fetch({
-	service: 'service1', 
+	service: 'service1',
 	cmd: 'add'
 }, {
-	a: 2, 
+	a: 2,
 	b: 5}
 });
 ```
