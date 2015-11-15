@@ -57,7 +57,7 @@ catch(function(err) {
 Initialize a new picom service.
 
 Parameters:
-- hosts ([String], default: ['127.0.0.1:4222']): Nats.io address
+- servers ([String], default: ['127.0.0.1:4222']): Nats.io address
 - ttl (Integer, default: 30): After how many seconds of no response the server is considered "failing"
 - retries (Integer, default: 3): How many times try reconnect (to different hosts)
 - port (Integer, default: random): Used to specify a port, if omitted, a random port will be chosen
@@ -73,7 +73,12 @@ myService.expose({
         reply(null, msg.a + msg.b)
     }
 });
+```   
+the exposed function will get a 'reply' callback with the signature:
+```js
+function reply(err, payload)
 ```
+it's the method responsibility to call reply when finished, otherwise the caller might timeout
 
 ### picom.request(service, [msg], [options])
 Send request to remote service
