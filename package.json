@@ -23,7 +23,8 @@
 	},
 	"dependencies": {
 		"nats": "0.4.4",
-		"bluebird": "3.0.5"
+		"bluebird": "3.0.5",
+		"is-plain-object": "2.0.1"
 	},
 	"devDependencies": {
 		"gulp": "3.9.0",
