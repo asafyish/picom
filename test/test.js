@@ -4,6 +4,7 @@
 
 // Mocha setup
 var chai = require('chai');
+var Promise = require('bluebird');
 var expect = chai.expect;
 
 var Picom = require('../');
@@ -17,32 +18,57 @@ describe('picom', function () {
 
 	before(function (done) {
 		service1.expose({
-			'method-1': function (msg, reply) {
-				reply(null, {
-					hello: 'method-1'
+			'method-1': function (msg) {
+				return new Promise(function (resolve, reject) {
+					resolve({
+						hello: 'method-1'
+					});
 				});
+			},
+			'not-a-promise': function (msg) {
 			},
 			'never-reply': function () {
 				// Should timeout
+				return new Promise(function () {
+
+				});
 			},
-			'text-response': function (msg, reply) {
-				reply(null, 'text response');
+			'text-response': function (msg) {
+				return new Promise(function (resolve) {
+					resolve('text response');
+				})
+			},
+			'throws-a-string': function () {
+				return new Promise(function () {
+					throw 'Something is not right';
+				});
+			},
+			'throws-an-object': function () {
+				return new Promise(function () {
+					throw {message: 'not good'};
+				});
 			},
 			'queue-method': function () {
 			}
 		});
 
 		service2.expose({
-			'method-2': function (msg, reply) {
-				reply(null, {
-					hello: 'method-2'
+			'method-2': function (msg) {
+				return new Promise(function (resolve, reject) {
+					resolve({
+						hello: 'method-2'
+					});
 				});
 			},
-			'erorr-out': function (msg, reply) {
-				reply({message: 'something bad happened'});
+			'error-out': function (msg) {
+				return new Promise(function (resolve, reject) {
+					reject('something bad happened');
+				});
 			},
-			'reply-null': function (msg, reply) {
-				reply();
+			'reply-null': function (msg) {
+				return new Promise(function (resolve) {
+					resolve();
+				});
 			}
 		});
 
@@ -157,11 +183,31 @@ describe('picom', function () {
 			});
 	});
 
-	it('should get an error message from a method on the other service', function (done) {
-		service1.
-			request('service2.erorr-out').
+	it('should catch a throwed exception', function (done) {
+		service2.
+			request('service1.throws-a-string').
 			catch(function (err) {
-				expect(err).to.deep.equal({message: 'something bad happened'});
+
+				expect(err.message).to.equal('Something is not right');
+
+				done();
+			});
+	});
+
+	it('show catch a throwed object from the other service', function (done) {
+		service2.
+			request('service1.throws-an-object').
+			catch(function (err) {
+				expect(JSON.parse(err.message)).to.deep.equal({message: 'not good'});
+				done();
+			})
+	});
+
+	it('should catch a reject from the other service', function (done) {
+		service1.
+			request('service2.error-out').
+			catch(function (err) {
+				expect(err.message).to.deep.equal('something bad happened');
 				done();
 			});
 	});
@@ -169,6 +215,22 @@ describe('picom', function () {
 	it('should disconnect service 1', function (done) {
 		service1.close();
 		done();
+	});
+
+	it('should fail to send a request from service1 since its disconnected', function (done) {
+		service1.
+			request('service2.method-2').
+			catch(function (err) {
+				done();
+			});
+	});
+
+	it('should fail to publish from service1 since its disconnected', function (done) {
+		service1.
+			publish('service2.method-2').
+			catch(function (err) {
+				done();
+			});
 	});
 
 	it('should fail messaging service 1 because it was disconnected', function (done) {
