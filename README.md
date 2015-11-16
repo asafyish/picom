@@ -20,13 +20,11 @@ Then, on device 1:
 var Picom = require('picom');
 var service1 = new Picom('service1');
 service1.expose({
-    add: function(msg, reply) {
-
-
-        reply(null, {hello: 'from service 1', result: msg.a + msg.b});
+    add: function(msg) {
+      return Promise.reslove({hello: 'from service 1', result: msg.a + msg.b});
     },
-    returnError: function(msg, reply) {
-        reply({something: 'went wrong'});
+    returnError: function(msg) {
+      return Promise.reject('something went wrong');
     }
 });
 ```
@@ -47,7 +45,7 @@ service2.request('service1.add', {
 
 myService.request('service1.returnError').
 catch(function(err) {
-    // Prints {something: 'went wrong'}
+    // err is instance of Error with message: 'something went wrong'
     console.log(err);
 });
 ```
@@ -69,16 +67,11 @@ Usage
 
 ```js
 myService.expose({
-    add: function(msg, reply) {
-        reply(null, msg.a + msg.b)
+    add: function(msg) {
+      return Promise.resolve(msg.a + msg.b);
     }
 });
 ```   
-the exposed function will get a 'reply' callback with the signature:
-```js
-function reply(err, payload)
-```
-it's the method responsibility to call reply when finished, otherwise the caller might timeout
 
 ### picom.request(service, [msg], [options])
 Send request to remote service
@@ -95,10 +88,8 @@ Usage
 const Picom = require('picom');
 const service1 = new Picom('service1');
 service1.expose({
-    add: function(msg, reply) {
-
-
-        reply(null, {result: msg.a + msg.b});
+    add: function(msg) {
+      return Promise.resolve({result: msg.a + msg.b});
     }
 });
 ```
