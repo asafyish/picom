@@ -11,8 +11,8 @@ service.connect();
 setTimeout(function () {
 	console.log('Sending ping');
 
-	service.request('pong.get', {message: 'request from ping'}).
-		then(function (response) {
+	service.request('pong.get', {message: 'request from ping'})
+		.then(function (response) {
 			console.log('Got %s', JSON.stringify(response));
 		});
 }, 200);
