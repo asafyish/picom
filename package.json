@@ -1,6 +1,6 @@
 {
 	"name": "picom",
-	"version": "0.5.3",
+	"version": "0.5.4",
 	"license": "MIT",
 	"author": "Asaf Yishai",
 	"homepage": "https://github.com/asafyish/picom",
@@ -22,16 +22,16 @@
 		"url": "https://github.com/asafyish/picom/issues"
 	},
 	"dependencies": {
-		"nats": "0.4.4",
-		"bluebird": "3.0.5",
+		"nats": "0.5.0",
+		"bluebird": "3.1.1",
 		"is-plain-object": "2.0.1"
 	},
 	"devDependencies": {
 		"gulp": "3.9.0",
 		"gulp-load-plugins": "1.1.0",
-		"gulp-eslint": "1.1.0",
+		"gulp-eslint": "1.1.1",
 		"gulp-mocha": "2.2.0",
-		"gulp-istanbul": "0.10.2",
+		"gulp-istanbul": "0.10.3",
 		"chai": "3.4.1"
 	},
 	"engines": {
