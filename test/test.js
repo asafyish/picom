@@ -17,6 +17,14 @@ describe('picom', function () {
 		timeout: 1000
 	});
 
+	service1.on('error', function () {
+		// Ignore errors
+	});
+
+	service2.on('error', function () {
+		// Ignore errors
+	});
+
 	before(function (done) {
 		service1.expose({
 			'method-1': function (msg) {
@@ -75,6 +83,23 @@ describe('picom', function () {
 
 		// Give the services a chance to connect
 		setTimeout(done, 500);
+	});
+
+	it('should catch emitted error', function (done) {
+		var temp = new Picom('temp-service2');
+		temp.connect();
+
+		service1.once('error', function (error) {
+			expect(error).to.equal('Something is not right');
+			done();
+		});
+
+		temp
+			.request('service1.throws-a-string')
+			.catch(function (err) {
+
+				expect(err.message).to.equal('Something is not right');
+			});
 	});
 
 	it('should fail creating picom with invalid options', function (done) {
@@ -243,5 +268,10 @@ describe('picom', function () {
 			.catch(function () {
 				done();
 			});
+	});
+
+	it('should create picom object with 0 as timeout', function () {
+		var temp = new Picom('temp-service', {timeout: 0});
+		expect(temp.options.timeout).to.equal(0);
 	});
 });
