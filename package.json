@@ -1,11 +1,11 @@
 {
 	"name": "picom",
-	"version": "0.5.5",
+	"version": "0.6.0",
 	"license": "MIT",
 	"author": "Asaf Yishai",
 	"homepage": "https://github.com/asafyish/picom",
 	"keywords": [
-    "performance",
+		"performance",
 		"microservice",
 		"micro-services",
 		"load-balance",
@@ -13,7 +13,7 @@
 		"scalability",
 		"discovery",
 		"failover"
-  ],
+	],
 	"repository": {
 		"type": "git",
 		"url": "git://github.com/asafyish/picom.git"
@@ -22,17 +22,17 @@
 		"url": "https://github.com/asafyish/picom/issues"
 	},
 	"dependencies": {
-		"nats": "0.5.0",
-		"bluebird": "3.1.1",
-		"is-plain-object": "2.0.1"
+		"nats": "1.0.0",
+		"bluebird": "3.5.1",
+		"is-plain-object": "2.0.4"
 	},
 	"devDependencies": {
-		"gulp": "3.9.0",
-		"gulp-load-plugins": "1.1.0",
-		"gulp-eslint": "1.1.1",
-		"gulp-mocha": "2.2.0",
-		"gulp-istanbul": "0.10.3",
-		"chai": "3.4.1"
+		"gulp": "3.9.1",
+		"gulp-load-plugins": "1.5.0",
+		"gulp-eslint": "4.0.2",
+		"gulp-mocha": "6.0.0",
+		"gulp-istanbul": "1.1.3",
+		"chai": "4.1.2"
 	},
 	"engines": {
 		"node": ">=0.12.0"
